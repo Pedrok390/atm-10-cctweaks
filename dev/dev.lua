@@ -3,25 +3,31 @@ local command = args[1] or "help"
 local BASE = "https://raw.githubusercontent.com/Pedrok390/atm-10-cctweaks/main/"
 
 if command == "help" then
-    print("ATM10 DevKit 0.1.0")
+    print("ATM10 DevKit 0.2.0")
     print("dev help           - Mostra esta ajuda")
     print("dev status         - Estado da instalacao")
     print("dev inspect        - Lista peripherals")
     print("dev inspect <nome> - Mostra tipos e metodos")
+    print("dev mine           - Configura a mineracao")
+    print("dev mine help      - Ajuda da mining turtle")
     print("dev update         - Atualiza pela branch main")
 elseif command == "status" then
-    print("ATM10 DevKit 0.1.0")
+    print("ATM10 DevKit 0.2.0")
     print("Computador: " .. os.getComputerID())
     print("Nome: " .. (os.getComputerLabel() or "sem nome"))
     print("Sistema: " .. os.version())
     print("HTTP: " .. ((http and http.get) and "disponivel" or "desativado"))
-    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua" }) do
+    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua" }) do
         print(((fs.exists(path) and not fs.isDir(path)) and "[OK] " or "[AUSENTE] ") .. path)
     end
     print("Peripherals: " .. #peripheral.getNames())
 elseif command == "inspect" then
     if not shell.execute("/dev/bin/inspect.lua", table.unpack(args, 2)) then
         error("Falha na inspecao. Confira o nome ou execute dev update.", 0)
+    end
+elseif command == "mine" then
+    if not shell.execute("/dev/bin/mine.lua", table.unpack(args, 2)) then
+        error("Mineracao interrompida. Leia a mensagem acima; use dev mine status.", 0)
     end
 elseif command == "update" then
     if not http or not http.get then error("HTTP desativado na configuracao do CC:Tweaked.", 0) end
