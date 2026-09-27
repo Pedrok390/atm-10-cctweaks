@@ -6,6 +6,7 @@ local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local COMMAND_PROTOCOL = "atm10:mine:command"
 local s
+local save
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
 
 local function wirelessModem()
@@ -56,6 +57,12 @@ local function sendTelemetry()
         minimum = s.minimum,
         paused = s.remotePaused or false,
         baseHold = s.remoteHome or false,
+        cancelling = s.remoteCancel or false,
+        controlState = s.remoteCancel and "CANCELANDO"
+            or (s.remoteHome and s.mode == "home" and "RETORNANDO")
+            or (s.remoteHome and s.mode == "dock" and "NA BASE")
+            or (s.remotePaused and "PAUSADO")
+            or nil,
     }, TELEMETRY_PROTOCOL)
 end
 
@@ -79,9 +86,18 @@ local function receiveControl(timeout)
     elseif msg.command == "home" and s.mode ~= "done" then
         s.remotePaused = false
         s.remoteHome = true
+        s.remoteCancel = false
         if s.mode ~= "home" and s.mode ~= "dock" then s.mode = "home" end
         save()
         print("Comando remoto: VOLTAR PARA BASE.")
+        return true
+    elseif msg.command == "cancel" and s.mode ~= "done" then
+        s.remotePaused = false
+        s.remoteHome = true
+        s.remoteCancel = true
+        if s.mode ~= "home" and s.mode ~= "dock" then s.mode = "home" end
+        save()
+        print("Comando remoto: CANCELAR. Retornando para a base...")
         return true
     end
     return false
@@ -102,6 +118,7 @@ local function help()
     print("dev mine resume - retoma uma tarefa salva")
     print("dev mine status - mostra progresso")
     print("dev mine recover-home - apos recolocar na origem e orientacao inicial")
+    print("dev mine cancel - cancela a tarefa quando a turtle esta na base")
     print("Bau ATRAS, turtle sobre o canto inicial da area.")
     print("Area: para a frente e para a direita; primeira camada logo ABAIXO.")
     print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
@@ -146,7 +163,7 @@ local function loadState()
     return best
 end
 
-local function save()
+save = function()
     fs.makeDir("/dev")
     s.serial = s.serial + 1
     local path = STATE .. (s.serial % 2 == 0 and ".a" or ".b")
@@ -155,6 +172,13 @@ local function save()
     h.write(textutils.serialize(s))
     h.close()
     sendTelemetry()
+end
+
+local function deleteState()
+    for _, suffix in ipairs({ ".a", ".b" }) do
+        local path = STATE .. suffix
+        if fs.exists(path) then fs.delete(path) end
+    end
 end
 
 -- Record intention before moving, then the confirmed pose. If power fails
@@ -409,11 +433,21 @@ local function run()
                 save()
             end
             refuelAtHome()
+            if s.remoteCancel then
+                print("Mineracao cancelada com seguranca na base.")
+                deleteState()
+                return
+            end
             if s.remoteHome then
                 print("Na base por comando remoto. Aguardando RETOMAR...")
                 while s.remoteHome do
                     sendTelemetry()
                     receiveControl(1)
+                    if s.remoteCancel then
+                        print("Mineracao cancelada com seguranca na base.")
+                        deleteState()
+                        return
+                    end
                 end
             end
             face(0)
@@ -474,6 +508,20 @@ local function main()
         s.x, s.y, s.z, s.dir, s.pending, s.mode = 0, 0, 0, 0, nil, "dock"
         save()
         print("Origem registrada. Execute dev mine resume.")
+        return
+    end
+    if args[1] == "cancel" then
+        if not s or s.mode == "done" then
+            deleteState()
+            print("Nenhuma mineracao ativa.")
+            return
+        end
+        if s.pending then error("Posicao incerta. Recupere a origem antes de cancelar.", 0) end
+        if s.x ~= 0 or s.y ~= 0 or s.z ~= 0 or (s.mode ~= "dock" and not s.remoteHome) then
+            error("Cancelamento seguro exige a turtle na base. Use o botao BASE, aguarde NA BASE e tente novamente.", 0)
+        end
+        deleteState()
+        print("Mineracao cancelada. Agora voce pode iniciar uma nova tarefa.")
         return
     end
     if args[1] == "resume" then
