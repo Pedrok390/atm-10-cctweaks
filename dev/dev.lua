@@ -1,0 +1,43 @@
+local args = { ... }
+local command = args[1] or "help"
+local BASE = "https://raw.githubusercontent.com/Pedrok390/atm-10-cctweaks/main/"
+
+if command == "help" then
+    print("ATM10 DevKit 0.1.0")
+    print("dev help           - Mostra esta ajuda")
+    print("dev status         - Estado da instalacao")
+    print("dev inspect        - Lista peripherals")
+    print("dev inspect <nome> - Mostra tipos e metodos")
+    print("dev update         - Atualiza pela branch main")
+elseif command == "status" then
+    print("ATM10 DevKit 0.1.0")
+    print("Computador: " .. os.getComputerID())
+    print("Nome: " .. (os.getComputerLabel() or "sem nome"))
+    print("Sistema: " .. os.version())
+    print("HTTP: " .. ((http and http.get) and "disponivel" or "desativado"))
+    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua" }) do
+        print(((fs.exists(path) and not fs.isDir(path)) and "[OK] " or "[AUSENTE] ") .. path)
+    end
+    print("Peripherals: " .. #peripheral.getNames())
+elseif command == "inspect" then
+    if not shell.execute("/dev/bin/inspect.lua", table.unpack(args, 2)) then
+        error("Falha na inspecao. Confira o nome ou execute dev update.", 0)
+    end
+elseif command == "update" then
+    if not http or not http.get then error("HTTP desativado na configuracao do CC:Tweaked.", 0) end
+    print("Buscando instalador atualizado...")
+    local response, err, failed = http.get(BASE .. "install.lua")
+    if not response then
+        if failed then failed.close() end
+        error("Falha na atualizacao: " .. tostring(err), 0)
+    end
+    local ok, source = pcall(response.readAll)
+    response.close()
+    if not ok then error(source, 0) end
+    if not source or source == "" then error("Instalador vazio; tente novamente.", 0) end
+    local installer, syntax = load(source, "@install.lua", "t", _ENV)
+    if not installer then error("Instalador invalido: " .. tostring(syntax), 0) end
+    installer()
+else
+    error("Comando desconhecido: " .. command .. ". Use dev help.", 0)
+end
