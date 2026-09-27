@@ -18,7 +18,8 @@ local function simulation(w, l, d, options)
     local m = {x=0,y=0,z=0,dir=0,fuel=0,selected=1,inv={},disk={},blocks={},
         digs=0,moves=0,departures=0,turns=0,waits=0,coal=options.coal or 5000,
         logs={},answers={'MINERAR'},crash=options.crash,full=options.full,
-        saves=0,stopSave=options.stopSave,horizontal={}}
+        saves=0,stopSave=options.stopSave,horizontal={},returnedBuckets=0,
+        fuelItem=options.fuelItem or 'minecraft:coal'}
     local function key(x,y,z) return x..','..y..','..z end
     for y=1,d do for z=0,l-1 do for x=0,w-1 do
         if not options.empty or y > options.empty then m.blocks[key(x,-y,z)] = true end
@@ -121,6 +122,8 @@ local function simulation(w, l, d, options)
             if m.full then return false end
             if m.inv[m.selected] and m.inv[m.selected].name=='minecraft:coal' then
                 m.coal=m.coal+m.inv[m.selected].count
+            elseif m.inv[m.selected] and m.inv[m.selected].name=='minecraft:bucket' then
+                m.returnedBuckets=m.returnedBuckets+m.inv[m.selected].count
             end
             m.inv[m.selected]=nil; return true
         end,
@@ -130,13 +133,26 @@ local function simulation(w, l, d, options)
             if m.wrongFuel then m.inv[m.selected]={name='minecraft:stone',count=n}; return true end
             n=math.min(n,m.coal)
             if n==0 then return false end
-            m.coal=m.coal-n; m.inv[m.selected]={name='minecraft:coal',count=n}; return true
+            m.coal=m.coal-n; m.inv[m.selected]={name=m.fuelItem,count=n}; return true
         end,
         refuel=function(n)
-            assert(m.inv[m.selected].name=='minecraft:coal','burned nonfuel')
-            assert(m.inv[m.selected].count>n, 'consumed reserved last coal')
-            m.inv[m.selected].count=m.inv[m.selected].count-n
-            m.fuel=m.fuel+n*80; return true
+            local item=m.inv[m.selected]
+            if not item then return false end
+            local values={['minecraft:coal']=80,['minecraft:charcoal']=80,
+                ['minecraft:coal_block']=800,['minecraft:lava_bucket']=1000,
+                ['test:biofuel']=240}
+            local value=values[item.name]
+            if not value then return false end
+            if n==0 then return true end
+            n=n or item.count
+            if item.count<n then return false end
+            item.count=item.count-n
+            m.fuel=m.fuel+n*value
+            if item.count==0 then
+                m.inv[m.selected]=item.name=='minecraft:lava_bucket'
+                    and {name='minecraft:bucket',count=n} or nil
+            end
+            return true
         end,
     }
     m.execute=function(...)
@@ -230,6 +246,14 @@ end)
 test('nonfuel from chest is returned and not consumed',function()
     local m=simulation(2,2,1); m.wrongFuel=true
     assert(m.start()); m.done(); assert(m.waits>=1)
+end)
+test('generic CC fuel is accepted without a hardcoded whitelist',function()
+    local m=simulation(2,2,1,{fuelItem='test:biofuel'})
+    assert(m.start()); m.done(); assert(m.fuel>0)
+end)
+test('lava bucket refuels and empty bucket returns to source chest',function()
+    local m=simulation(2,2,1,{fuelItem='minecraft:lava_bucket',coal=20})
+    assert(m.start()); m.done(); assert(m.returnedBuckets>0)
 end)
 test('tagged mod chest and generic inventory remain supported',function()
     local tagged=simulation(2,2,1,{blockName='test:chest',tags={['c:chests']=true}})
