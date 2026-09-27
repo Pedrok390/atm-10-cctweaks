@@ -16,6 +16,7 @@ mon.setCursorBlink(false)
 
 local data,selected={},nil
 local buttons={}
+local notice=""
 local modes={dock="BASE",travel="INDO",mine="MINERANDO",home="VOLTANDO",done="CONCLUIDO"}
 
 local function at(x,y,s,c,b)
@@ -55,7 +56,8 @@ end
 
 local function sendCommand(cmd)
   if not selected then return end
-  rednet.send(selected,{type="mine_command",target=selected,command=cmd},COMMAND)
+  local ok=rednet.send(selected,{type="mine_command",target=selected,command=cmd},COMMAND)
+  notice=(ok and "COMANDO ENVIADO: " or "FALHA AO ENVIAR: ")..string.upper(cmd)
 end
 
 local function draw()
@@ -92,7 +94,13 @@ local function draw()
 
   local t=data[selected]
   at(x,3,tostring(t.label or selected),colors.yellow)
-  at(x,5,"Modo:",colors.lightGray) at(x+12,5,modes[t.mode] or t.mode or "?")
+  at(x,5,"Modo:",colors.lightGray)
+  local state=t.controlState or (t.paused and "PAUSADO") or (t.baseHold and "NA BASE") or (modes[t.mode] or t.mode or "?")
+  local stateColor=(state=="RETORNANDO" or state=="CANCELANDO") and colors.orange
+      or (state=="PAUSADO" and colors.yellow)
+      or (state=="NA BASE" and colors.lime)
+      or colors.white
+  at(x+12,5,state,stateColor)
   at(x,7,"Fuel:",colors.lightGray) at(x+12,7,tostring(t.fuel).."/"..tostring(t.fuelLimit))
   if type(t.fuel)=="number" and type(t.fuelLimit)=="number" then bar(x,8,math.min(28,w-x-1),t.fuel,t.fuelLimit) end
   at(x,10,"Retorno:",colors.lightGray) at(x+12,10,tostring(t.returnAt or "?"))
@@ -111,10 +119,12 @@ local function draw()
   bar(x,19,math.min(28,w-x-1),cur,math.max(cells,1))
   at(x,21,"Area:",colors.lightGray) at(x+12,21,string.format("%sx%sx%s",t.width or "?",t.length or "?",t.depth or "?"))
   at(x,23,"Slots:",colors.lightGray) at(x+12,23,tostring(t.freeSlots or "?").."/16")
-  local by=h-3
+  local by=h-4
   button("pause",x,by,10,"PAUSAR",colors.red)
   button("resume",x+12,by,10,"RETOMAR",colors.green)
   button("home",x+24,by,10,"BASE",colors.orange)
+  button("cancel",x,by+2,12,"CANCELAR",colors.red)
+  if notice~="" then at(x+14,by+2,notice,colors.yellow) end
   at(x,h-1,"Toque na lista ou nos botoes.",colors.lightGray)
 end
 
@@ -137,7 +147,8 @@ local function touch()
       if y==b.y and tx>=b.x1 and tx<=b.x2 then
         if name=="pause" then sendCommand("pause")
         elseif name=="resume" then sendCommand("resume")
-        elseif name=="home" then sendCommand("home") end
+        elseif name=="home" then sendCommand("home")
+        elseif name=="cancel" then sendCommand("cancel") end
         handled=true
         break
       end
