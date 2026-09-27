@@ -198,6 +198,8 @@ local function action(name, fn, update)
     return ok, err
 end
 
+local shouldAbortWork
+
 local function face(dir)
     while s.dir ~= dir do
         if shouldAbortWork() then return false end
@@ -229,7 +231,7 @@ local function returnThreshold()
     return distance() + MARGIN + 2
 end
 
-local function shouldAbortWork()
+shouldAbortWork = function()
     remoteGate()
     if returningHome then return false end
     if s.remoteHome or s.mode == "home" then return true end
@@ -446,7 +448,7 @@ local function refuelAtHome()
     print("Combustivel pronto: " .. tostring(turtle.getFuelLevel()) .. " (minimo " .. needed .. ").")
 end
 
-local function runControlled()
+local function run()
     while s.mode ~= "done" do
         remoteGate()
         if s.mode == "home" then
