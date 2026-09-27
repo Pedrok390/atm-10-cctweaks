@@ -67,6 +67,10 @@ O programa ainda pede `MINERAR` antes de iniciar.
   ao ponto mais distante mais uma margem. Valores acima do tanque sao rejeitados.
 - Abastece automaticamente pelo primeiro slot do mesmo bau. Nao queima madeira,
   ferramentas ou outros itens coletados como combustivel.
+- Baus normais, baus com armadilha e barris do Minecraft sao reconhecidos pelo
+  bloco, sem exigir que aparecam como peripherals. A transferencia usa as
+  operacoes nativas da turtle; no abastecimento, pega ate duas unidades,
+  consome uma e devolve a reserva. Blocos desconhecidos sao informados no erro.
 - Espera no bau se faltar combustivel ou espaco, verificando novamente a cada
   cinco segundos. Reponha o primeiro slot ou esvazie o bau para continuar.
 - Verifica se ha um inventario a frente antes de descarregar; se o bau sumir,

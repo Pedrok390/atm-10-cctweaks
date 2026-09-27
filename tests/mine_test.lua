@@ -70,6 +70,7 @@ local function simulation(w, l, d, options)
         assert(m.waits<20,'wait loop never resolved')
         m.full=false
         m.coal=5000
+        m.wrongFuel=nil
     end
     env.fs={
         exists=function(p) return m.disk[p]~=nil end,
@@ -86,13 +87,19 @@ local function simulation(w, l, d, options)
         return assert(load('return '..s,'state','t',{}))()
     end}
     env.peripheral={wrap=function(side)
-        if side~='front' or not atChest() or m.noChest then return nil end
+        if not options.peripheral or side~='front' or not atChest() or m.noChest then return nil end
         return {size=function() return 27 end,list=function()
             if m.coal==0 then return {} end
             return {[1]={name='minecraft:coal',count=m.coal}}
         end}
     end}
     env.turtle={
+        inspect=function()
+            if atChest() and not m.noChest then
+                return true,{name=options.blockName or 'minecraft:chest',tags=options.tags or {}}
+            end
+            return false,'No block to inspect'
+        end,
         select=function(i) m.selected=i; return true end,
         getItemCount=count,
         getItemDetail=function(i) return m.inv[i or m.selected] end,
@@ -112,17 +119,24 @@ local function simulation(w, l, d, options)
         drop=function()
             assert(atChest() and not m.noChest, 'dropped outside chest')
             if m.full then return false end
+            if m.inv[m.selected] and m.inv[m.selected].name=='minecraft:coal' then
+                m.coal=m.coal+m.inv[m.selected].count
+            end
             m.inv[m.selected]=nil; return true
         end,
         suck=function(n)
             assert(atChest(), 'suck outside base')
-            assert(m.coal>1, 'consumed reserved last coal')
             assert(not m.inv[m.selected], 'fuel slot occupied')
+            if m.wrongFuel then m.inv[m.selected]={name='minecraft:stone',count=n}; return true end
+            n=math.min(n,m.coal)
+            if n==0 then return false end
             m.coal=m.coal-n; m.inv[m.selected]={name='minecraft:coal',count=n}; return true
         end,
         refuel=function(n)
             assert(m.inv[m.selected].name=='minecraft:coal','burned nonfuel')
-            m.inv[m.selected]=nil; m.fuel=m.fuel+n*80; return true
+            assert(m.inv[m.selected].count>n, 'consumed reserved last coal')
+            m.inv[m.selected].count=m.inv[m.selected].count-n
+            m.fuel=m.fuel+n*80; return true
         end,
     }
     m.execute=function(...)
@@ -199,9 +213,29 @@ test('power loss refuses blind resume, home recovery works',function()
 end)
 test('missing chest never drops or leaves home',function()
     local m=simulation(2,2,1); m.noChest=true; m.inv[1]={name='stone',count=1}
-    local ok,err=m.start(); assert(not ok and err:find('Bau nao encontrado'))
+    local ok,err=m.start(); assert(not ok and err:find('Bau nao reconhecido'))
     assert(m.moves==0 and m.inv[1]); m.noChest=false
     assert(m.execute('resume')); m.done()
+end)
+test('normal chest works without peripheral exposure',function()
+    local m=simulation(3,3,2)
+    assert(m.start()); m.done()
+end)
+test('non-inventory block is rejected without dropping items',function()
+    local m=simulation(2,2,1,{blockName='minecraft:stone'})
+    m.inv[1]={name='ore',count=1}
+    local ok,err=m.start()
+    assert(not ok and err:find('minecraft:stone') and m.inv[1] and m.moves==0)
+end)
+test('nonfuel from chest is returned and not consumed',function()
+    local m=simulation(2,2,1); m.wrongFuel=true
+    assert(m.start()); m.done(); assert(m.waits>=1)
+end)
+test('tagged mod chest and generic inventory remain supported',function()
+    local tagged=simulation(2,2,1,{blockName='test:chest',tags={['c:chests']=true}})
+    assert(tagged.start()); tagged.done()
+    local generic=simulation(2,2,1,{blockName='test:inventory',peripheral=true})
+    assert(generic.start()); generic.done()
 end)
 test('waiting interruption can resume',function()
     local m=simulation(2,2,1,{coal=1}); m.stopWaiting=true

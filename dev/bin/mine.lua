@@ -201,11 +201,20 @@ local function travel()
 end
 
 local function chest()
-    local p = peripheral.wrap("front")
-    if not p or type(p.list) ~= "function" or type(p.size) ~= "function" then
-        error("Bau nao encontrado atras da origem. Recoloque o bau e use resume.", 0)
+    -- Turtles can use adjacent chests through suck/drop even when those
+    -- blocks are not exposed as generic inventory peripherals.
+    local present, block = turtle.inspect()
+    if present then
+        local tags = block.tags or {}
+        if block.name == "minecraft:chest" or block.name == "minecraft:trapped_chest"
+            or block.name == "minecraft:barrel" or tags["c:chests"]
+            or tags["forge:chests"] or tags["c:barrels"] then return end
     end
-    return p
+    local p = peripheral.wrap("front")
+    if p and type(p.list) == "function" and type(p.size) == "function" then return end
+    error("Bau nao reconhecido. A frente da turtle agora: "
+        .. (present and block.name or "ar")
+        .. ". O bau deve ficar atras da ORIENTACAO INICIAL, na mesma altura. Use resume apos corrigir.", 0)
 end
 
 local lastWait
@@ -239,23 +248,20 @@ local function refuelAtHome()
         error("Reserva necessaria (" .. needed .. ") excede o tanque (" .. limit .. ").", 0)
     end
     while fuel() < needed do
-        local list = chest().list()
-        local first = list[1]
-        if not first or not FUELS[first.name] or first.count < 2 then
-            waitFor("Combustivel " .. fuel() .. "/" .. needed .. ". Ponha 2+ carvoes no slot 1 do bau.")
-        else
-            turtle.select(16)
-            if turtle.suck(1) then
-                local item = turtle.getItemDetail(16)
-                if item and FUELS[item.name] then
-                    if not turtle.refuel(1) then error("Esse combustivel nao foi aceito pela turtle.", 0) end
-                    lastWait = nil
-                else
-                    -- Another player/hopper may have changed the chest.
-                    unload()
-                end
-            else waitFor("Nao foi possivel pegar combustivel. Confira o bau.") end
+        chest()
+        turtle.select(16)
+        -- Native transfer: take at most two items, consume one and return
+        -- the other to keep the first chest slot reserved. No list() needed.
+        local received = turtle.suck(2)
+        local item = received and turtle.getItemDetail(16)
+        local usable = item and FUELS[item.name] and turtle.getItemCount(16) >= 2
+        if usable then
+            if not turtle.refuel(1) then error("Esse combustivel nao foi aceito pela turtle.", 0) end
         end
+        unload() -- Return the reserve or any non-fuel, without burning it.
+        if not usable then
+            waitFor("Combustivel " .. fuel() .. "/" .. needed .. ". Ponha 2+ carvoes no slot 1 do bau.")
+        else lastWait = nil end
     end
     turtle.select(1)
     print("Combustivel pronto: " .. tostring(turtle.getFuelLevel()) .. " (minimo " .. needed .. ").")
