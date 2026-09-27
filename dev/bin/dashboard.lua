@@ -58,7 +58,6 @@ local function sendCommand(cmd)
   if not selected then return end
   local ok=rednet.send(selected,{type="mine_command",target=selected,command=cmd},COMMAND)
   notice=(ok and "COMANDO ENVIADO: " or "FALHA AO ENVIAR: ")..string.upper(cmd)
-  draw()
 end
 
 local function draw()
@@ -125,7 +124,7 @@ local function draw()
   button("resume",x+12,by,10,"RETOMAR",colors.green)
   button("home",x+24,by,10,"BASE",colors.orange)
   button("cancel",x,by+2,12,"CANCELAR",colors.red)
-  if notice~="" then at(x+14,by+2,math.min and notice or notice,colors.yellow) end
+  if notice~="" then at(x+14,by+2,notice,colors.yellow) end
   at(x,h-1,"Toque na lista ou nos botoes.",colors.lightGray)
 end
 
