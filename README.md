@@ -51,10 +51,13 @@ O programa ainda pede `MINERAR` antes de iniciar.
 
 ### Comportamento
 
-- Percorre cada camada em zigue-zague. Passa por ar sem tentar cavar e segue
-  para a proxima camada, mesmo se a anterior ja estava inteiramente vazia.
-  Ele precisa percorrer a area para verificar se esta vazia; nao usa um unico
-  ponto como prova de que a camada inteira foi minerada.
+- Antes de iniciar uma camada, verifica o bloco abaixo na coluna inicial.
+  Se nao detectar bloco, desce diretamente e pula essa camada, sem percorrer
+  o retangulo. Repete ate encontrar um bloco ou atingir a profundidade escolhida.
+  **Isso e uma estimativa pela coluna inicial, nao uma varredura da camada:**
+  pode deixar blocos isolados de lado se houver um buraco nessa coluna.
+  As camadas de ar contam no limite escolhido; a turtle nunca desce alem dele.
+  Ao encontrar bloco, minera a camada em zigue-zague normalmente.
 - Volta ao bau quando restam dois slots vazios (reserva para bloqueios no
   caminho) ou quando o combustivel se aproxima do custo de retorno mais uma
   margem de 32 movimentos. Descarrega e retoma a partir da ultima celula.

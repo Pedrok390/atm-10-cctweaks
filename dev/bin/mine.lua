@@ -15,6 +15,8 @@ local function help()
     print("dev mine recover-home - apos recolocar na origem e orientacao inicial")
     print("Bau ATRAS, turtle sobre o canto inicial da area.")
     print("Area: para a frente e para a direita; primeira camada logo ABAIXO.")
+    print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
+    print("Camadas de ar contam no limite de profundidade escolhido.")
     print("Reserve o slot 1 do bau para carvao/carvao vegetal/bloco de carvao.")
     print("Coloque pelo menos 2 unidades; a ultima fica reservada.")
     print("Ctrl+T interrompe. Nao mova/gire manualmente; use resume.")
@@ -155,11 +157,39 @@ local function cell(index)
 end
 
 local function travel()
-    while s.y > -s.layer do step("down") end
     if s.cursor == 0 then
+        -- Reach the cell ABOVE the next layer using the known home shaft.
+        while s.y > 1 - s.layer do step("down") end
+        if fuel() <= distance() + MARGIN + 2 or emptySlots() <= 2 then
+            s.mode = "home"
+            save()
+            return
+        end
+        -- Persist the observation before moving/digging. Otherwise a resumed
+        -- job could mistake its freshly dug first cell for an empty layer.
+        if not s.entering then
+            s.entering = s.y > -s.layer and not turtle.detectDown() and "skip" or "mine"
+            save()
+        end
+        if s.y > -s.layer then step("down") end
+        if s.entering == "skip" then
+            print("Ar na coluna inicial: pulando camada " .. s.layer .. ".")
+            s.entering = nil
+            if s.layer == s.depth then
+                s.cursor = s.width * s.length
+                s.mode = "home"
+            else
+                s.layer = s.layer + 1
+                s.dug = 0
+            end
+            save()
+            return
+        end
+        s.entering = nil
         s.cursor = 1
         save()
     else
+        while s.y > -s.layer do step("down") end
         local x, z = cell(s.cursor)
         -- Retrace the already-cleared corridor to the last completed cell.
         if z > 0 then alongZ(z - 1) end
@@ -240,7 +270,7 @@ local function run()
         elseif s.mode == "dock" then
             unload()
             if s.cursor == s.width * s.length then
-                print("Camada " .. s.layer .. ((s.dug or 0) == 0 and " ja estava vazia." or " concluida."))
+                print("Camada " .. s.layer .. " finalizada.")
                 if s.layer == s.depth then
                     face(0)
                     s.mode = "done"

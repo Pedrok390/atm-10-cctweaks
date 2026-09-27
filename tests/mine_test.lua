@@ -18,7 +18,7 @@ local function simulation(w, l, d, options)
     local m = {x=0,y=0,z=0,dir=0,fuel=0,selected=1,inv={},disk={},blocks={},
         digs=0,moves=0,departures=0,turns=0,waits=0,coal=options.coal or 5000,
         logs={},answers={'MINERAR'},crash=options.crash,full=options.full,
-        saves=0,stopSave=options.stopSave}
+        saves=0,stopSave=options.stopSave,horizontal={}}
     local function key(x,y,z) return x..','..y..','..z end
     for y=1,d do for z=0,l-1 do for x=0,w-1 do
         if not options.empty or y > options.empty then m.blocks[key(x,-y,z)] = true end
@@ -41,6 +41,7 @@ local function simulation(w, l, d, options)
         local x,y,z=target(kind)
         assert(x>=0 and x<w and z>=0 and z<l and y<=0 and y>=-d,'movement outside area')
         if m.blocks[key(x,y,z)] then return false,'block' end
+        if kind=='forward' then m.horizontal[y]=(m.horizontal[y] or 0)+1 end
         assert(m.fuel > 0, 'out of fuel')
         if m.y==0 and y==-1 then
             m.departures=m.departures+1
@@ -153,6 +154,19 @@ end
 test('empty layers and low fuel return',function()
     local m=simulation(9,8,3,{empty=2})
     assert(m.start()); m.done(); assert(m.digs==72); assert(m.departures>3)
+    assert(not m.horizontal[-1] and not m.horizontal[-2], 'traversed air layer')
+end)
+test('all air descends to configured limit and returns directly',function()
+    local m=simulation(9,8,12,{empty=12})
+    assert(m.start()); m.done()
+    assert(m.moves==24 and m.digs==0 and next(m.horizontal)==nil)
+end)
+test('a hole in the first column intentionally skips isolated blocks',function()
+    local m=simulation(3,3,2)
+    m.blocks['0,-1,0']=nil
+    assert(m.start())
+    assert(m.state().mode=='done' and m.blocks['1,-1,0'])
+    assert(not m.horizontal[-1] and m.digs==9)
 end)
 test('full inventory returns and resumes exact cell',function()
     local m=simulation(7,5,2,{minimum=5000})
@@ -212,6 +226,22 @@ test('resume or recover at EVERY saved checkpoint',function()
             assert(m.execute('recover-home'))
         end
         assert(m.execute('resume')); m.done()
+    end
+end)
+test('resume during every checkpoint of descent through air',function()
+    local baseline=simulation(3,3,4,{empty=2})
+    assert(baseline.start())
+    for checkpoint=1,baseline.saves do
+        local m=simulation(3,3,4,{empty=2,stopSave=checkpoint})
+        assert(not m.start())
+        m.stopSave=nil
+        if m.state().pending then
+            m.x,m.y,m.z,m.dir=0,0,0,0
+            m.answers={'ORIGEM'}
+            assert(m.execute('recover-home'))
+        end
+        assert(m.execute('resume')); m.done()
+        assert(not m.horizontal[-1] and not m.horizontal[-2])
     end
 end)
 print(tests..' mining tests passed')
