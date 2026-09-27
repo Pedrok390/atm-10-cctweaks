@@ -3,8 +3,6 @@
 local args = { ... }
 local STATE = "/dev/mine-state"
 local MARGIN = 32
-local FUELS = { ["minecraft:coal"] = true, ["minecraft:charcoal"] = true,
-    ["minecraft:coal_block"] = true }
 local s
 
 local function help()
@@ -17,8 +15,8 @@ local function help()
     print("Area: para a frente e para a direita; primeira camada logo ABAIXO.")
     print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
     print("Camadas de ar contam no limite de profundidade escolhido.")
-    print("Reserve o slot 1 do bau para carvao/carvao vegetal/bloco de carvao.")
-    print("Coloque pelo menos 2 unidades; a ultima fica reservada.")
+    print("O abastecimento aceita qualquer item reconhecido por turtle.refuel(0).")
+    print("Recipientes restantes, como o balde da lava, voltam para o mesmo bau.")
     print("Ctrl+T interrompe. Nao mova/gire manualmente; use resume.")
 end
 
@@ -250,17 +248,18 @@ local function refuelAtHome()
     while fuel() < needed do
         chest()
         turtle.select(16)
-        -- Native transfer: take at most two items, consume one and return
-        -- the other to keep the first chest slot reserved. No list() needed.
-        local received = turtle.suck(2)
-        local item = received and turtle.getItemDetail(16)
-        local usable = item and FUELS[item.name] and turtle.getItemCount(16) >= 2
+        -- Take one item and ask CC:Tweaked itself whether it is fuel.
+        -- refuel(0) is only a probe: it does not consume the selected item.
+        local received = turtle.suck(1)
+        local usable = received and turtle.getItemCount(16) > 0 and turtle.refuel(0)
         if usable then
             if not turtle.refuel(1) then error("Esse combustivel nao foi aceito pela turtle.", 0) end
         end
-        unload() -- Return the reserve or any non-fuel, without burning it.
+        -- Return anything left by refuelling to the same chest. This covers
+        -- container fuels such as lava_bucket, which leaves an empty bucket.
+        unload()
         if not usable then
-            waitFor("Combustivel " .. fuel() .. "/" .. needed .. ". Ponha 2+ carvoes no slot 1 do bau.")
+            waitFor("Combustivel " .. fuel() .. "/" .. needed .. ". Coloque um combustivel valido no primeiro slot do bau.")
         else lastWait = nil end
     end
     turtle.select(1)
@@ -370,7 +369,7 @@ local function main()
     local limit = turtle.getFuelLimit()
     if type(limit) == "number" and needed > limit then error("Minimo/reserva excede a capacidade de " .. limit .. ". Reduza os valores.", 0) end
     print("Area " .. width .. "x" .. length .. "; " .. depth .. " camadas ABAIXO; reserva: " .. needed)
-    print("Bau atras; slot 1 reservado para combustivel. Nao mova a turtle durante a tarefa.")
+    print("Bau atras; primeiro item acessivel usado para abastecer. Nao mova a turtle durante a tarefa.")
     write("Digite MINERAR para iniciar: ")
     if read() ~= "MINERAR" then print("Cancelado."); return end
     s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
