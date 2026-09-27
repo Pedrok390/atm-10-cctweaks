@@ -239,28 +239,57 @@ end
 
 local function refuelAtHome()
     -- Cover a round trip to the farthest cell, plus reserve, regardless of
-    -- how small a minimum the user chooses. Never burn mined wood or tools.
+    -- how small a minimum the user chooses.
     local needed = math.max(s.minimum, 2 * (s.width + s.length + s.depth - 2) + MARGIN)
     local limit = turtle.getFuelLimit()
     if type(limit) == "number" and needed > limit then
         error("Reserva necessaria (" .. needed .. ") excede o tanque (" .. limit .. ").", 0)
     end
+
     while fuel() < needed do
         chest()
         turtle.select(16)
-        -- Take one item and ask CC:Tweaked itself whether it is fuel.
-        -- refuel(0) is only a probe: it does not consume the selected item.
-        local received = turtle.suck(1)
-        local usable = received and turtle.getItemCount(16) > 0 and turtle.refuel(0)
-        if usable then
-            if not turtle.refuel(1) then error("Esse combustivel nao foi aceito pela turtle.", 0) end
+
+        -- Prefer inventory peripherals so we can inspect every chest slot.
+        -- suck() does not mean "slot 1": a chest may expose another stack first.
+        local inv = peripheral.wrap("front")
+        local usable = false
+        if inv and type(inv.list) == "function" and type(inv.pushItems) == "function"
+            and peripheral.getName then
+            local turtleName = peripheral.getName(peripheral.wrap("back"))
+            if turtleName then
+                for slot in pairs(inv.list()) do
+                    if inv.pushItems(turtleName, slot, 1, 16) > 0 then
+                        if turtle.refuel(0) then
+                            usable = turtle.refuel(1)
+                            break
+                        end
+                        -- Not fuel: put it back before trying the next chest slot.
+                        turtle.drop()
+                    end
+                end
+            end
         end
-        -- Return anything left by refuelling to the same chest. This covers
-        -- container fuels such as lava_bucket, which leaves an empty bucket.
-        unload()
+
+        -- Fallback for vanilla chests which are not exposed as inventory
+        -- peripherals. This can only test the stack selected by native suck().
+        if not usable and turtle.getItemCount(16) == 0 then
+            local received = turtle.suck(1)
+            usable = received and turtle.refuel(0) and turtle.refuel(1) or false
+        end
+
+        -- Return containers (lava bucket -> bucket) or rejected items.
+        if turtle.getItemCount(16) > 0 then
+            chest()
+            turtle.drop()
+        end
+
         if not usable then
-            waitFor("Combustivel " .. fuel() .. "/" .. needed .. ". Coloque um combustivel valido no primeiro slot do bau.")
-        else lastWait = nil end
+            waitFor("Combustivel " .. fuel() .. "/" .. needed
+                .. ". Nenhum combustivel acessivel foi encontrado no bau.")
+        else
+            lastWait = nil
+        end
     end
     turtle.select(1)
     print("Combustivel pronto: " .. tostring(turtle.getFuelLevel()) .. " (minimo " .. needed .. ").")
