@@ -4,6 +4,7 @@ local args = { ... }
 local STATE = "/dev/mine-state"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
+local COMMAND_PROTOCOL = "atm10:mine:command"
 local s
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
 
@@ -53,8 +54,47 @@ local function sendTelemetry()
         freeSlots = free,
         returnAt = s.x + s.z - s.y + MARGIN + 2,
         minimum = s.minimum,
+        paused = s.remotePaused or false,
+        baseHold = s.remoteHome or false,
     }, TELEMETRY_PROTOCOL)
 end
+
+local function receiveControl(timeout)
+    if not rednet or not wirelessModem() then return false end
+    local sender, msg = rednet.receive(COMMAND_PROTOCOL, timeout or 0.05)
+    if not sender or type(msg) ~= "table" or msg.type ~= "mine_command" then return false end
+    if msg.target and msg.target ~= os.getComputerID() then return false end
+
+    if msg.command == "pause" then
+        s.remotePaused = true
+        save()
+        print("Comando remoto: PAUSAR.")
+        return true
+    elseif msg.command == "resume" then
+        s.remotePaused = false
+        s.remoteHome = false
+        save()
+        print("Comando remoto: RETOMAR.")
+        return true
+    elseif msg.command == "home" and s.mode ~= "done" then
+        s.remotePaused = false
+        s.remoteHome = true
+        if s.mode ~= "home" and s.mode ~= "dock" then s.mode = "home" end
+        save()
+        print("Comando remoto: VOLTAR PARA BASE.")
+        return true
+    end
+    return false
+end
+
+local function remoteGate()
+    receiveControl(0.05)
+    while s.remotePaused do
+        sendTelemetry()
+        receiveControl(1)
+    end
+end
+
 
 local function help()
     print("dev mine - configuracao interativa")
@@ -350,6 +390,7 @@ end
 
 local function run()
     while s.mode ~= "done" do
+        remoteGate()
         if s.mode == "home" then
             home()
             s.mode = "dock"
@@ -368,6 +409,13 @@ local function run()
                 save()
             end
             refuelAtHome()
+            if s.remoteHome then
+                print("Na base por comando remoto. Aguardando RETOMAR...")
+                while s.remoteHome do
+                    sendTelemetry()
+                    receiveControl(1)
+                end
+            end
             face(0)
             s.mode = "travel"
             save()

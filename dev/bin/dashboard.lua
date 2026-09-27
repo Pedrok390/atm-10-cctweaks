@@ -1,4 +1,5 @@
 local PROTOCOL="atm10:mine:telemetry"
+local COMMAND="atm10:mine:command"
 local mon=peripheral.find("monitor")
 if not mon then error("Conecte um Advanced Monitor.",0) end
 local modem
@@ -14,6 +15,7 @@ mon.setTextScale(0.5)
 mon.setCursorBlink(false)
 
 local data,selected={},nil
+local buttons={}
 local modes={dock="BASE",travel="INDO",mine="MINERANDO",home="VOLTANDO",done="CONCLUIDO"}
 
 local function at(x,y,s,c,b)
@@ -44,7 +46,20 @@ local function bar(x,y,w,v,max)
   if n<w then at(x+n,y,string.rep(" ",w-n),colors.white,colors.gray) end
 end
 
+local function button(name,x,y,w,label,bg)
+  at(x,y,string.rep(" ",w),colors.white,bg)
+  local tx=x+math.max(0,math.floor((w-#label)/2))
+  at(tx,y,label,colors.white,bg)
+  buttons[name]={x1=x,x2=x+w-1,y=y}
+end
+
+local function sendCommand(cmd)
+  if not selected then return end
+  rednet.send(selected,{type="mine_command",target=selected,command=cmd},COMMAND)
+end
+
 local function draw()
+  buttons={}
   local w,h=mon.getSize()
   mon.setBackgroundColor(colors.black) mon.clear()
   clearLine(1,colors.blue)
@@ -96,7 +111,11 @@ local function draw()
   bar(x,19,math.min(28,w-x-1),cur,math.max(cells,1))
   at(x,21,"Area:",colors.lightGray) at(x+12,21,string.format("%sx%sx%s",t.width or "?",t.length or "?",t.depth or "?"))
   at(x,23,"Slots:",colors.lightGray) at(x+12,23,tostring(t.freeSlots or "?").."/16")
-  at(x,h-1,"Toque na lista para selecionar.",colors.lightGray)
+  local by=h-3
+  button("pause",x,by,10,"PAUSAR",colors.red)
+  button("resume",x+12,by,10,"RETOMAR",colors.green)
+  button("home",x+24,by,10,"BASE",colors.orange)
+  at(x,h-1,"Toque na lista ou nos botoes.",colors.lightGray)
 end
 
 local function receiver()
@@ -112,11 +131,23 @@ end
 
 local function touch()
   while true do
-    local _,_,_,y=os.pullEvent("monitor_touch")
-    local row=5
-    for _,id in ipairs(ids()) do
-      if y>=row and y<=row+1 then selected=id draw() break end
-      row=row+3
+    local _,_,tx,y=os.pullEvent("monitor_touch")
+    local handled=false
+    for name,b in pairs(buttons) do
+      if y==b.y and tx>=b.x1 and tx<=b.x2 then
+        if name=="pause" then sendCommand("pause")
+        elseif name=="resume" then sendCommand("resume")
+        elseif name=="home" then sendCommand("home") end
+        handled=true
+        break
+      end
+    end
+    if not handled then
+      local row=5
+      for _,id in ipairs(ids()) do
+        if y>=row and y<=row+1 then selected=id draw() break end
+        row=row+3
+      end
     end
   end
 end
