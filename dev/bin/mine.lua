@@ -8,6 +8,7 @@ local COMMAND_PROTOCOL = "atm10:mine:command"
 local s
 local save
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
+local returningHome = false
 
 local function wirelessModem()
     if telemetry.modem then return telemetry.modem end
@@ -54,6 +55,7 @@ local function sendTelemetry()
         cells = s.width * s.length,
         freeSlots = free,
         returnAt = s.x + s.z - s.y + MARGIN + 2,
+        returnReason = s.returnReason,
         minimum = s.minimum,
         paused = s.remotePaused or false,
         baseHold = s.remoteHome or false,
@@ -66,51 +68,54 @@ local function sendTelemetry()
     }, TELEMETRY_PROTOCOL)
 end
 
-local function receiveControl(timeout)
-    if not rednet or not wirelessModem() then return false end
-    local sender, msg = rednet.receive(COMMAND_PROTOCOL, timeout or 0.05)
-    if not sender or type(msg) ~= "table" or msg.type ~= "mine_command" then return false end
+local function applyControl(msg)
+    if type(msg) ~= "table" or msg.type ~= "mine_command" then return false end
     if msg.target and msg.target ~= os.getComputerID() then return false end
 
     if msg.command == "pause" then
         s.remotePaused = true
-        save()
+        s.returnReason = "PAUSADO"
         print("Comando remoto: PAUSAR.")
-        return true
     elseif msg.command == "resume" then
         s.remotePaused = false
         s.remoteHome = false
-        save()
+        s.remoteCancel = false
+        s.returnReason = nil
         print("Comando remoto: RETOMAR.")
-        return true
     elseif msg.command == "home" and s.mode ~= "done" then
         s.remotePaused = false
         s.remoteHome = true
         s.remoteCancel = false
-        if s.mode ~= "home" and s.mode ~= "dock" then s.mode = "home" end
-        save()
+        s.returnReason = "COMANDO BASE"
+        if s.mode ~= "dock" then s.mode = "home" end
         print("Comando remoto: VOLTAR PARA BASE.")
-        return true
     elseif msg.command == "cancel" and s.mode ~= "done" then
         s.remotePaused = false
         s.remoteHome = true
         s.remoteCancel = true
-        if s.mode ~= "home" and s.mode ~= "dock" then s.mode = "home" end
-        save()
+        s.returnReason = "CANCELAMENTO"
+        if s.mode ~= "dock" then s.mode = "home" end
         print("Comando remoto: CANCELAR. Retornando para a base...")
-        return true
+    else
+        return false
     end
-    return false
+    sendTelemetry()
+    return true
+end
+
+local function controlListener()
+    while true do
+        local _, msg = rednet.receive(COMMAND_PROTOCOL)
+        applyControl(msg)
+    end
 end
 
 local function remoteGate()
-    receiveControl(0.05)
     while s.remotePaused do
         sendTelemetry()
-        receiveControl(1)
+        sleep(0.2)
     end
 end
-
 
 local function help()
     print("dev mine - configuracao interativa")
@@ -195,12 +200,14 @@ end
 
 local function face(dir)
     while s.dir ~= dir do
+        if shouldAbortWork() then return false end
         local left = (dir - s.dir) % 4 == 3
         local ok, err = action("girar", left and turtle.turnLeft or turtle.turnRight, function()
             s.dir = (s.dir + (left and -1 or 1)) % 4
         end)
         if not ok then error("Nao foi possivel girar: " .. tostring(err), 0) end
     end
+    return true
 end
 
 local function fuel()
@@ -218,11 +225,31 @@ local function distance()
     return s.x + s.z - s.y
 end
 
+local function returnThreshold()
+    return distance() + MARGIN + 2
+end
+
+local function shouldAbortWork()
+    remoteGate()
+    if returningHome then return false end
+    if s.remoteHome or s.mode == "home" then return true end
+    if fuel() <= returnThreshold() then
+        s.returnReason = "COMBUSTIVEL BAIXO"
+        s.mode = "home"
+        save()
+        print("Combustivel baixo: " .. tostring(fuel())
+            .. ". Retornando para a base (limite " .. tostring(returnThreshold()) .. ").")
+        return true
+    end
+    return false
+end
+
 local function step(kind)
     local move = kind == "up" and turtle.up or kind == "down" and turtle.down or turtle.forward
     local detect = kind == "up" and turtle.detectUp or kind == "down" and turtle.detectDown or turtle.detect
     local dig = kind == "up" and turtle.digUp or kind == "down" and turtle.digDown or turtle.dig
     for attempt = 1, 12 do
+        if shouldAbortWork() then return false end
         if detect() then
             if emptySlots() < 2 then error("Sem espaco para remover bloqueio do caminho. Libere 2 slots e use resume.", 0) end
             local dug, reason = dig()
@@ -238,7 +265,7 @@ local function step(kind)
             elseif s.dir == 2 then s.z = s.z - 1
             else s.x = s.x - 1 end
         end)
-        if ok then return end
+        if ok then return true end
         if fuel() == 0 then error("Combustivel esgotado. Abasteca sem mover a turtle e use resume.", 0) end
         if attempt == 12 then error("Caminho bloqueado: " .. tostring(err) .. ". Libere-o e use resume.", 0) end
         sleep(0.3)
@@ -246,22 +273,26 @@ local function step(kind)
 end
 
 local function alongX(x)
-    if s.x ~= x then face(s.x < x and 1 or 3) end
-    while s.x ~= x do step("forward") end
+    if s.x ~= x and not face(s.x < x and 1 or 3) then return false end
+    while s.x ~= x do if not step("forward") then return false end end
+    return true
 end
 
 local function alongZ(z)
-    if s.z ~= z then face(s.z < z and 0 or 2) end
-    while s.z ~= z do step("forward") end
+    if s.z ~= z and not face(s.z < z and 0 or 2) then return false end
+    while s.z ~= z do if not step("forward") then return false end end
+    return true
 end
 
 local function home()
+    returningHome = true
     -- The previous row is fully cleared, unlike the unfinished current row.
     if s.z > 0 then alongZ(s.z - 1) end
     alongX(0)
     alongZ(0)
     while s.y < 0 do step("up") end
     face(2)
+    returningHome = false
 end
 
 local function cell(index)
@@ -273,8 +304,9 @@ end
 local function travel()
     if s.cursor == 0 then
         -- Reach the cell ABOVE the next layer using the known home shaft.
-        while s.y > 1 - s.layer do step("down") end
-        if fuel() <= distance() + MARGIN + 2 or emptySlots() <= 2 then
+        while s.y > 1 - s.layer do if not step("down") then return end end
+        if fuel() <= returnThreshold() or emptySlots() <= 2 then
+            s.returnReason = fuel() <= returnThreshold() and "COMBUSTIVEL BAIXO" or "INVENTARIO"
             s.mode = "home"
             save()
             return
@@ -285,7 +317,7 @@ local function travel()
             s.entering = s.y > -s.layer and not turtle.detectDown() and "skip" or "mine"
             save()
         end
-        if s.y > -s.layer then step("down") end
+        if s.y > -s.layer and not step("down") then return end
         if s.entering == "skip" then
             print("Ar na coluna inicial: pulando camada " .. s.layer .. ".")
             s.entering = nil
@@ -303,15 +335,17 @@ local function travel()
         s.cursor = 1
         save()
     else
-        while s.y > -s.layer do step("down") end
+        while s.y > -s.layer do if not step("down") then return end end
         local x, z = cell(s.cursor)
         -- Retrace the already-cleared corridor to the last completed cell.
-        if z > 0 then alongZ(z - 1) end
-        alongX(x)
-        alongZ(z)
+        if z > 0 and not alongZ(z - 1) then return end
+        if not alongX(x) then return end
+        if not alongZ(z) then return end
     end
-    s.mode = "mine"
-    save()
+    if s.mode ~= "home" then
+        s.mode = "mine"
+        save()
+    end
 end
 
 local function chest()
@@ -412,7 +446,7 @@ local function refuelAtHome()
     print("Combustivel pronto: " .. tostring(turtle.getFuelLevel()) .. " (minimo " .. needed .. ").")
 end
 
-local function run()
+local function runControlled()
     while s.mode ~= "done" do
         remoteGate()
         if s.mode == "home" then
@@ -442,7 +476,7 @@ local function run()
                 print("Na base por comando remoto. Aguardando RETOMAR...")
                 while s.remoteHome do
                     sendTelemetry()
-                    receiveControl(1)
+                    sleep(0.2)
                     if s.remoteCancel then
                         print("Mineracao cancelada com seguranca na base.")
                         deleteState()
@@ -459,20 +493,29 @@ local function run()
             if s.cursor == s.width * s.length then
                 s.mode = "home"
                 save()
-            elseif emptySlots() <= 2 or fuel() <= distance() + MARGIN + 2 then
-                print("Voltando ao bau para descarregar/abastecer...")
+            elseif emptySlots() <= 2 or fuel() <= returnThreshold() then
+                s.returnReason = fuel() <= returnThreshold() and "COMBUSTIVEL BAIXO" or "INVENTARIO"
+                print("Voltando ao bau: " .. s.returnReason .. "...")
                 s.mode = "home"
                 save()
             else
                 local x, z = cell(s.cursor + 1)
-                alongX(x)
-                alongZ(z)
-                s.cursor = s.cursor + 1
-                save()
+                if alongX(x) and alongZ(z) and s.mode ~= "home" then
+                    s.cursor = s.cursor + 1
+                    save()
+                end
             end
         end
     end
     print("Mineracao concluida. Turtle na origem; itens no bau.")
+end
+
+local function runControlled()
+    if rednet and parallel and wirelessModem() then
+        parallel.waitForAny(run, controlListener)
+    else
+        run()
+    end
 end
 
 local function prompt(label, default, maximum)
@@ -527,7 +570,7 @@ local function main()
     if args[1] == "resume" then
         if not s then error("Nenhuma tarefa salva. Use dev mine.", 0) end
         if s.pending then error("Interrupcao durante movimento: posicao incerta. Use dev mine recover-home.", 0) end
-        run()
+        runControlled()
         return
     end
     if args[1] and args[1] ~= "start" then help(); return end
@@ -554,7 +597,7 @@ local function main()
     s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
         minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0 }
     save()
-    run()
+    runControlled()
 end
 
 main()
