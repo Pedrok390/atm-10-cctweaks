@@ -3,7 +3,58 @@
 local args = { ... }
 local STATE = "/dev/mine-state"
 local MARGIN = 32
+local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local s
+local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
+
+local function wirelessModem()
+    if telemetry.modem then return telemetry.modem end
+    if not peripheral or not peripheral.getNames then return nil end
+    for _, name in ipairs(peripheral.getNames()) do
+        if peripheral.getType(name) == "modem" then
+            local modem = peripheral.wrap(name)
+            if modem and type(modem.isWireless) == "function" and modem.isWireless() then
+                telemetry.modem = name
+                if rednet and rednet.open and not rednet.isOpen(name) then rednet.open(name) end
+                return name
+            end
+        end
+    end
+    return nil
+end
+
+local function updateGps()
+    if not gps or not gps.locate then return end
+    local now = os.clock()
+    if now - telemetry.lastGps < 5 then return end
+    telemetry.lastGps = now
+    local ok, x, y, z = pcall(gps.locate, 1, false)
+    if ok and x then telemetry.gx, telemetry.gy, telemetry.gz = x, y, z end
+end
+
+local function sendTelemetry()
+    if not s or not rednet or not wirelessModem() then return end
+    updateGps()
+    local level = turtle.getFuelLevel()
+    local free = 0
+    for i = 1, 16 do if turtle.getItemCount(i) == 0 then free = free + 1 end end
+    rednet.broadcast({
+        type = "mine_status",
+        id = os.getComputerID(),
+        label = os.getComputerLabel() or ("Turtle " .. os.getComputerID()),
+        fuel = level,
+        fuelLimit = turtle.getFuelLimit(),
+        mode = s.mode,
+        x = s.x, y = s.y, z = s.z, dir = s.dir,
+        gps = telemetry.gx and { x = telemetry.gx, y = telemetry.gy, z = telemetry.gz } or nil,
+        width = s.width, length = s.length, depth = s.depth,
+        layer = s.layer, cursor = s.cursor,
+        cells = s.width * s.length,
+        freeSlots = free,
+        returnAt = s.x + s.z - s.y + MARGIN + 2,
+        minimum = s.minimum,
+    }, TELEMETRY_PROTOCOL)
+end
 
 local function help()
     print("dev mine - configuracao interativa")
@@ -63,6 +114,7 @@ local function save()
     if not h then error("Nao foi possivel salvar progresso: " .. tostring(err), 0) end
     h.write(textutils.serialize(s))
     h.close()
+    sendTelemetry()
 end
 
 -- Record intention before moving, then the confirmed pose. If power fails
@@ -361,6 +413,7 @@ local function main()
         print("Camada: " .. math.min(s.layer, s.depth) .. "; celulas: " .. s.cursor .. "/" .. s.width * s.length)
         print("Posicao relativa: " .. s.x .. "," .. s.y .. "," .. s.z .. "; direcao: " .. s.dir)
         print("Combustivel: " .. tostring(turtle.getFuelLevel()))
+        sendTelemetry()
         if s.pending then print("Posicao incerta: use recover-home apos recolocar na origem.") end
         return
     end
