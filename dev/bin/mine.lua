@@ -270,6 +270,7 @@ end
 local lastWait
 local function waitFor(message)
     if lastWait ~= message then print(message); lastWait = message end
+    sendTelemetry()
     sleep(5)
 end
 
