@@ -8,6 +8,32 @@ wget run https://raw.githubusercontent.com/Pedrok390/atm-10-cctweaks/main/instal
 
 Se o DevKit ja estiver instalado, use `dev update`.
 
+
+## Stations
+
+O DevKit pode salvar pontos nomeados por coordenadas GPS:
+
+```text
+dev station set fuel <x> <y> <z>
+dev station set unload <x> <y> <z>
+dev station list
+dev station show fuel
+dev station clear unload
+```
+
+As coordenadas de `fuel` e `unload` representam o bloco do inventario.
+A turtle usa o A* para chegar a uma posicao adjacente e ficar de frente para
+esse bloco sem quebrar o caminho.
+
+- `fuel`: substitui o antigo fuel place. `dev fuel set/show/clear` continua
+  funcionando por compatibilidade e grava a station `fuel`.
+- `unload`: quando configurada, os itens minerados sao levados ate essa
+  station; depois a turtle volta ao GPS da origem da tarefa antes de continuar.
+- A origem da mineracao continua sendo salva por tarefa em `baseGps`; ela nao
+  depende de uma station global `home`.
+
+Outros nomes de station podem ser salvos agora para futuras automacoes do ATM10.
+
 ## Mining turtle
 
 Use uma turtle com picareta equipada. O modem wireless e opcional para este
