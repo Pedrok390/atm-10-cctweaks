@@ -2,6 +2,7 @@
 -- Coordinates: x = right, z = forward, y = up; direction 0 = forward.
 local args = { ... }
 local STATE = "/dev/mine-state"
+local FUEL_PLACE = "/dev/fuel-place"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local COMMAND_PROTOCOL = "atm10:mine:command"
@@ -44,6 +45,31 @@ local function updateGps()
     locateGps(1)
 end
 
+local function loadFuelPlace()
+    if not fs.exists(FUEL_PLACE) then return nil end
+    local h = fs.open(FUEL_PLACE, "r")
+    if not h then return nil end
+    local raw = h.readAll()
+    h.close()
+    local ok, t = pcall(textutils.unserialize, raw or "")
+    if not ok or type(t) ~= "table" or tonumber(t.x) == nil
+        or tonumber(t.y) == nil or tonumber(t.z) == nil then return nil end
+    return { x = tonumber(t.x), y = tonumber(t.y), z = tonumber(t.z) }
+end
+
+local function coord(n)
+    return math.floor(tonumber(n) + 0.5)
+end
+
+local function fuelBaseDistance()
+    local p = loadFuelPlace()
+    if not p or not s or not s.baseGps then return 0 end
+    local bx, by, bz = coord(s.baseGps.x), coord(s.baseGps.y), coord(s.baseGps.z)
+    local cx, cy, cz = coord(p.x), coord(p.y), coord(p.z)
+    -- The turtle stops beside the chest, not inside it.
+    return math.max(0, math.abs(cx-bx) + math.abs(cy-by) + math.abs(cz-bz) - 1)
+end
+
 local function sendTelemetry()
     if not s or not rednet or not wirelessModem() then return end
     updateGps()
@@ -67,6 +93,8 @@ local function sendTelemetry()
         gps = telemetry.gx and { x = telemetry.gx, y = telemetry.gy, z = telemetry.gz } or nil,
         baseGps = s.baseGps,
         gpsDistance = gpsDistance,
+        fuelPlace = loadFuelPlace(),
+        fuelTrip = fuelBaseDistance(),
         width = s.width, length = s.length, depth = s.depth,
         layer = s.layer, cursor = s.cursor,
         cells = s.width * s.length,
@@ -146,6 +174,8 @@ local function help()
     print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
     print("Camadas de ar contam no limite de profundidade escolhido.")
     print("O abastecimento aceita qualquer item reconhecido por turtle.refuel(0).")
+    print("Use dev fuel set <x> <y> <z> para definir o bau de combustivel.")
+    print("Ao abastecer, volta primeiro a base e depois vai ao bau SEM quebrar blocos.")
     print("Recipientes restantes, como o balde da lava, voltam para o mesmo bau.")
     print("Ctrl+T interrompe. Nao mova/gire manualmente; use resume.")
 end
@@ -245,7 +275,7 @@ local function distance()
 end
 
 local function returnThreshold()
-    return distance() + MARGIN + 2
+    return distance() + fuelBaseDistance() + MARGIN + 2
 end
 
 shouldAbortWork = function()
@@ -407,10 +437,11 @@ local function unload()
     end
 end
 
-local function refuelAtHome()
-    -- Cover a round trip to the farthest cell, plus reserve, regardless of
-    -- how small a minimum the user chooses.
-    local needed = math.max(s.minimum, 2 * (s.width + s.length + s.depth - 2) + MARGIN)
+local function miningFuelNeeded()
+    return math.max(s.minimum, 2 * (s.width + s.length + s.depth - 2) + MARGIN)
+end
+
+local function refuelFromFront(needed)
     local limit = turtle.getFuelLimit()
     if type(limit) == "number" and needed > limit then
         error("Reserva necessaria (" .. needed .. ") excede o tanque (" .. limit .. ").", 0)
@@ -419,50 +450,362 @@ local function refuelAtHome()
     while fuel() < needed do
         chest()
         turtle.select(16)
+        local received = turtle.suck(1)
+        local usable = received and turtle.getItemCount(16) > 0 and turtle.refuel(0)
 
-        -- Prefer inventory peripherals so we can inspect every chest slot.
-        -- suck() does not mean "slot 1": a chest may expose another stack first.
-        local inv = peripheral.wrap("front")
-        local usable = false
-        if inv and type(inv.list) == "function" and type(inv.pushItems) == "function"
-            and peripheral.getName then
-            local turtleName = peripheral.getName(peripheral.wrap("back"))
-            if turtleName then
-                for slot in pairs(inv.list()) do
-                    if inv.pushItems(turtleName, slot, 1, 16) > 0 then
-                        if turtle.refuel(0) then
-                            usable = turtle.refuel(1)
-                            break
-                        end
-                        -- Not fuel: put it back before trying the next chest slot.
-                        turtle.drop()
-                    end
-                end
+        if usable then
+            if not turtle.refuel(1) then
+                error("Esse combustivel nao foi aceito pela turtle.", 0)
             end
         end
 
-        -- Fallback for vanilla chests which are not exposed as inventory
-        -- peripherals. This can only test the stack selected by native suck().
-        if not usable and turtle.getItemCount(16) == 0 then
-            local received = turtle.suck(1)
-            usable = received and turtle.refuel(0) and turtle.refuel(1) or false
-        end
-
-        -- Return containers (lava bucket -> bucket) or rejected items.
+        -- A lava bucket leaves minecraft:bucket in the selected slot.
+        -- Rejected items and containers go back to this same fuel chest.
         if turtle.getItemCount(16) > 0 then
             chest()
             turtle.drop()
         end
 
         if not usable then
-            waitFor("Combustivel " .. fuel() .. "/" .. needed
-                .. ". Nenhum combustivel acessivel foi encontrado no bau.")
+            waitFor("Nenhum combustivel valido acessivel no bau de combustivel.")
         else
             lastWait = nil
         end
     end
     turtle.select(1)
-    print("Combustivel pronto: " .. tostring(turtle.getFuelLevel()) .. " (minimo " .. needed .. ").")
+end
+
+local function headingFromDelta(dx, dz)
+    if dx == 1 and dz == 0 then return 1 end
+    if dx == -1 and dz == 0 then return 3 end
+    if dx == 0 and dz == 1 then return 2 end
+    if dx == 0 and dz == -1 then return 0 end
+    return nil
+end
+
+local function turnRaw(current, target)
+    local diff = (target - current) % 4
+    if diff == 1 then
+        turtle.turnRight()
+    elseif diff == 2 then
+        turtle.turnRight(); turtle.turnRight()
+    elseif diff == 3 then
+        turtle.turnLeft()
+    end
+    return target
+end
+
+local function gpsPoint(timeout)
+    local p = locateGps(timeout or 2)
+    if not p then return nil end
+    return { x=coord(p.x), y=coord(p.y), z=coord(p.z) }
+end
+
+local function calibrateRawHeading()
+    local origin = gpsPoint(2)
+    if not origin then return nil, "GPS sem sinal na base." end
+
+    local turns = 0
+    for _ = 1, 4 do
+        if not turtle.detect() then
+            local ok, reason = turtle.forward()
+            if ok then
+                local now = gpsPoint(2)
+                if not now then
+                    turtle.back()
+                    for _ = 1, turns do turtle.turnLeft() end
+                    return nil, "GPS sumiu durante calibracao."
+                end
+                local moved = headingFromDelta(now.x-origin.x, now.z-origin.z)
+                if not moved then
+                    turtle.back()
+                    for _ = 1, turns do turtle.turnLeft() end
+                    return nil, "Nao foi possivel determinar orientacao pelo GPS."
+                end
+                local original = (moved - turns) % 4
+                return { pos=now, heading=moved, originalHeading=original }
+            end
+        end
+        turtle.turnRight()
+        turns = turns + 1
+    end
+    for _ = 1, turns % 4 do turtle.turnLeft() end
+    return nil, "Nao ha bloco livre ao redor da base para calibrar a direcao."
+end
+
+local function posKey(p)
+    return tostring(p.x) .. "," .. tostring(p.y) .. "," .. tostring(p.z)
+end
+
+local function manhattan(a, b)
+    return math.abs(a.x-b.x) + math.abs(a.y-b.y) + math.abs(a.z-b.z)
+end
+
+local function copyPos(p)
+    return { x=p.x, y=p.y, z=p.z }
+end
+
+local NEIGHBORS = {
+    {x=1,y=0,z=0}, {x=-1,y=0,z=0},
+    {x=0,y=1,z=0}, {x=0,y=-1,z=0},
+    {x=0,y=0,z=1}, {x=0,y=0,z=-1},
+}
+
+local function heuristic(p, goals)
+    local best
+    for _, g in ipairs(goals) do
+        local d = manhattan(p, g)
+        if not best or d < best then best = d end
+    end
+    return best or 0
+end
+
+local function reconstruct(came, nodes, key)
+    local path = {}
+    while came[key] do
+        table.insert(path, 1, nodes[key])
+        key = came[key]
+    end
+    return path
+end
+
+local function aStar(start, goals, blocked, margin)
+    local goalByKey = {}
+    local minX,maxX,minY,maxY,minZ,maxZ = start.x,start.x,start.y,start.y,start.z,start.z
+    for _, g in ipairs(goals) do
+        goalByKey[posKey(g)] = g
+        minX,maxX = math.min(minX,g.x),math.max(maxX,g.x)
+        minY,maxY = math.min(minY,g.y),math.max(maxY,g.y)
+        minZ,maxZ = math.min(minZ,g.z),math.max(maxZ,g.z)
+    end
+    minX,maxX,minY,maxY,minZ,maxZ =
+        minX-margin,maxX+margin,minY-margin,maxY+margin,minZ-margin,maxZ+margin
+
+    local startKey = posKey(start)
+    local open = { startKey }
+    local inOpen = { [startKey]=true }
+    local nodes = { [startKey]=copyPos(start) }
+    local came, gScore = {}, { [startKey]=0 }
+    local fScore = { [startKey]=heuristic(start,goals) }
+
+    while #open > 0 do
+        local bestIndex = 1
+        for i=2,#open do
+            if (fScore[open[i]] or math.huge) < (fScore[open[bestIndex]] or math.huge) then
+                bestIndex = i
+            end
+        end
+        local currentKey = table.remove(open,bestIndex)
+        inOpen[currentKey] = nil
+        local current = nodes[currentKey]
+
+        if goalByKey[currentKey] then
+            return reconstruct(came,nodes,currentKey),goalByKey[currentKey]
+        end
+
+        for _, d in ipairs(NEIGHBORS) do
+            local n = {x=current.x+d.x,y=current.y+d.y,z=current.z+d.z}
+            if n.x>=minX and n.x<=maxX and n.y>=minY and n.y<=maxY
+                and n.z>=minZ and n.z<=maxZ then
+                local nk = posKey(n)
+                if not blocked[nk] then
+                    local tentative = gScore[currentKey] + 1
+                    if tentative < (gScore[nk] or math.huge) then
+                        came[nk] = currentKey
+                        nodes[nk] = n
+                        gScore[nk] = tentative
+                        fScore[nk] = tentative + heuristic(n,goals)
+                        if not inOpen[nk] then
+                            open[#open+1] = nk
+                            inOpen[nk] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function headingForStep(from, to)
+    local dx,dz = to.x-from.x,to.z-from.z
+    if dx==1 and dz==0 then return 1 end
+    if dx==-1 and dz==0 then return 3 end
+    if dx==0 and dz==1 then return 2 end
+    if dx==0 and dz==-1 then return 0 end
+    return nil
+end
+
+local function tryRawStep(nav, nextPos, blocked)
+    local dy = nextPos.y - nav.pos.y
+    local ok, reason
+    if dy == 1 then
+        if turtle.detectUp() then
+            blocked[posKey(nextPos)] = true
+            return false, "bloco acima"
+        end
+        ok,reason = turtle.up()
+    elseif dy == -1 then
+        if turtle.detectDown() then
+            blocked[posKey(nextPos)] = true
+            return false, "bloco abaixo"
+        end
+        ok,reason = turtle.down()
+    else
+        local h = headingForStep(nav.pos,nextPos)
+        if h == nil then return false,"passo invalido" end
+        nav.heading = turnRaw(nav.heading,h)
+        if turtle.detect() then
+            blocked[posKey(nextPos)] = true
+            return false, "bloco a frente"
+        end
+        ok,reason = turtle.forward()
+    end
+
+    if not ok then
+        blocked[posKey(nextPos)] = true
+        return false,tostring(reason)
+    end
+    nav.pos = copyPos(nextPos)
+    return true
+end
+
+local function navigateAStar(nav, goals, blocked)
+    local margins = {4,8,16,32,64}
+    local replans = 0
+    while replans < 256 do
+        replans = replans + 1
+        local path,target
+        for _, margin in ipairs(margins) do
+            path,target = aStar(nav.pos,goals,blocked,margin)
+            if path then break end
+        end
+        if not path then
+            return false,"nenhuma rota encontrada dentro do limite de busca"
+        end
+
+        local changed = false
+        for _, nextPos in ipairs(path) do
+            local ok,reason = tryRawStep(nav,nextPos,blocked)
+            if not ok then
+                changed = true
+                print("Obstaculo detectado em " .. posKey(nextPos)
+                    .. ". Recalculando rota...")
+                s.returnReason = "RECALCULANDO ROTA"
+                sendTelemetry()
+                break
+            end
+        end
+        if not changed then return true,target end
+    end
+    return false,"limite de recalculos atingido"
+end
+
+local function fuelStandTargets(place)
+    local x,y,z = coord(place.x),coord(place.y),coord(place.z)
+    return {
+        {x=x-1,y=y,z=z,face=1},
+        {x=x+1,y=y,z=z,face=3},
+        {x=x,y=y,z=z-1,face=2},
+        {x=x,y=y,z=z+1,face=0},
+    }
+end
+
+local function calibrateRawHeading()
+    local origin = gpsPoint(2)
+    if not origin then return nil, "GPS sem sinal na base." end
+
+    local turns = 0
+    for _ = 1, 4 do
+        if not turtle.detect() then
+            local ok = turtle.forward()
+            if ok then
+                local now = gpsPoint(2)
+                turtle.back()
+                if not now then
+                    for _ = 1, turns do turtle.turnLeft() end
+                    return nil, "GPS sumiu durante calibracao."
+                end
+                local moved = headingFromDelta(now.x-origin.x,now.z-origin.z)
+                if not moved then
+                    for _ = 1, turns do turtle.turnLeft() end
+                    return nil, "Nao foi possivel determinar orientacao pelo GPS."
+                end
+                local original = (moved-turns)%4
+                return {pos=origin,heading=moved,originalHeading=original}
+            end
+        end
+        turtle.turnRight()
+        turns = turns + 1
+    end
+    for _ = 1, turns%4 do turtle.turnLeft() end
+    return nil,"Nao ha bloco livre ao redor da base para calibrar a direcao."
+end
+
+local function refuelAtConfiguredPlace()
+    local place = loadFuelPlace()
+    if not place then
+        -- Backwards compatible fallback: the old base chest is still usable.
+        return refuelFromFront(miningFuelNeeded())
+    end
+    if not s.baseGps then
+        error("Bau de combustivel configurado, mas esta tarefa nao possui GPS da base.", 0)
+    end
+
+    local base = {x=coord(s.baseGps.x),y=coord(s.baseGps.y),z=coord(s.baseGps.z)}
+    local goals = fuelStandTargets(place)
+    local directTrip = math.huge
+    for _,g in ipairs(goals) do directTrip=math.min(directTrip,manhattan(base,g)) end
+    if fuel() >= miningFuelNeeded() then return end
+    if fuel() < directTrip + MARGIN then
+        error("Combustivel insuficiente para procurar rota ate o bau configurado. Abasteca manualmente uma vez.", 0)
+    end
+
+    s.pending = "fuel-trip"
+    save()
+    print("Indo ao bau de combustivel sem quebrar blocos...")
+
+    local nav, err = calibrateRawHeading()
+    if not nav then
+        s.pending = nil
+        save()
+        error(err, 0)
+    end
+
+    local blocked = { [posKey({x=coord(place.x),y=coord(place.y),z=coord(place.z)})]=true }
+    local ok,target = navigateAStar(nav,goals,blocked)
+    if not ok then
+        local retreat = navigateAStar(nav,{base},blocked)
+        if retreat then
+            nav.heading = turnRaw(nav.heading,nav.originalHeading)
+            s.pending = nil
+            save()
+        end
+        error("Nao encontrei rota livre ate o bau de combustivel: " .. tostring(target)
+            .. ". Nenhum bloco foi quebrado.",0)
+    end
+
+    nav.heading = turnRaw(nav.heading,target.face)
+    chest()
+    local routeOut = manhattan(base,target)
+    local needed = miningFuelNeeded() + routeOut + MARGIN
+    refuelFromFront(needed)
+
+    print("Combustivel pronto. Calculando rota de volta para a base...")
+    s.returnReason = "VOLTANDO DO COMBUSTIVEL"
+    sendTelemetry()
+    ok,target = navigateAStar(nav,{base},blocked)
+    if not ok then
+        error("Nao encontrei rota livre de volta para a base: " .. tostring(target),0)
+    end
+    nav.heading = turnRaw(nav.heading, nav.originalHeading)
+    s.pending = nil
+    save()
+    print("Turtle novamente na base apos abastecer.")
+end
+
+local function refuelAtHome()
+    refuelAtConfiguredPlace()
 end
 
 local function run()

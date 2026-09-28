@@ -19,12 +19,18 @@ programa: ele roda localmente, sem depender do computador da base.
    A largura cresce para a direita. A primeira camada fica **um bloco abaixo
    da turtle**, e cada camada tem um bloco de altura.
 2. Coloque um bau normal ou duplo **imediatamente atras**, na mesma altura.
-3. Reserve o **primeiro slot do bau** para carvao, carvao vegetal ou bloco de
-   carvao. Coloque uma pilha; mantenha espaco livre para os itens minerados.
-   A turtle deixa uma unidade de combustivel no bau para reservar esse slot.
-   Com apenas uma unidade, ela espera voce repor.
+3. O bau imediatamente atras continua sendo o bau de descarga dos itens minerados.
+   O combustivel pode ficar em outro bau, configurado por coordenadas GPS.
 4. Dê um nome a turtle antes de usar, por exemplo `label set mineradora`.
-5. Execute `dev mine`. Escolha largura, comprimento, camadas e combustivel
+5. Configure o bau de combustivel, se desejar separa-lo da base:
+
+```text
+dev fuel set <x> <y> <z>
+dev fuel show
+```
+
+   As coordenadas sao do proprio bau. A turtle precisa ter GPS funcionando.
+   Depois execute `dev mine`. Escolha largura, comprimento, camadas e combustivel
    minimo quando solicitado. Confira a disposicao e digite `MINERAR`.
 
 Vista de cima (seta = direcao inicial):
@@ -60,17 +66,22 @@ O programa ainda pede `MINERAR` antes de iniciar.
   Ao encontrar bloco, minera a camada em zigue-zague normalmente.
 - Volta ao bau quando restam dois slots vazios (reserva para bloqueios no
   caminho) ou quando o combustivel se aproxima do custo de retorno mais uma
-  margem de 32 movimentos. Descarrega e retoma a partir da ultima celula.
+  margem de 32 movimentos, incluindo a reserva necessaria para ir da base ate o bau de combustivel configurado. Descarrega e retoma a partir da ultima celula.
 - Tambem volta ao bau ao concluir cada camada e no final da tarefa.
 - Para sair da base, exige o maior valor entre o minimo escolhido e
   `2 * (largura + comprimento + camadas - 2) + 32`, suficiente para ida e volta
   ao ponto mais distante mais uma margem. Valores acima do tanque sao rejeitados.
-- Abastece automaticamente pelo primeiro slot do mesmo bau. Nao queima madeira,
-  ferramentas ou outros itens coletados como combustivel.
-- Baus normais, baus com armadilha e barris do Minecraft sao reconhecidos pelo
-  bloco, sem exigir que aparecam como peripherals. A transferencia usa as
-  operacoes nativas da turtle; no abastecimento, pega ate duas unidades,
-  consome uma e devolve a reserva. Blocos desconhecidos sao informados no erro.
+- Se houver `dev fuel set x y z`, a turtle usa esse bau exclusivamente para
+  abastecimento. Quando precisa de combustivel, primeiro retorna a base da tarefa,
+  depois segue por GPS ate uma posicao adjacente ao bau, sem quebrar blocos.
+  O trajeto usa A* em 3D. Ao encontrar um obstaculo, marca aquela coordenada
+  como bloqueada e recalcula automaticamente a melhor rota conhecida, podendo
+  contornar pelos lados ou por cima/baixo quando houver espaco.
+- Se nenhum fuel place estiver configurado, mantem compatibilidade com o
+  abastecimento pelo bau da base.
+- Qualquer item aceito por `turtle.refuel(0)` pode ser usado. No caso de
+  `lava_bucket`, o balde vazio permanece no slot da turtle e e devolvido ao
+  mesmo bau de combustivel antes de ela voltar para a base.
 - Espera no bau se faltar combustivel ou espaco, verificando novamente a cada
   cinco segundos. Reponha o primeiro slot ou esvazie o bau para continuar.
 - Verifica se ha um inventario a frente antes de descarregar; se o bau sumir,
@@ -104,8 +115,8 @@ origem, com a orientacao inicial e o bau atras, e execute:
 dev mine recover-home
 ```
 
-Confirme com `ORIGEM` e execute `dev mine resume`. Esse comando apenas registra
-que voce ja colocou a turtle na origem; ele nao a transporta nem usa GPS.
+Confirme com `ORIGEM` e execute `dev mine resume`. Esse comando registra
+novamente a origem e, quando houver sinal, recalibra o GPS da base.
 
 ### Validacao
 
