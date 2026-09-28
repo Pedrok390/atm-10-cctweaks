@@ -588,9 +588,15 @@ local function aStar(start, goals, blocked, margin)
     local came, gScore = {}, { [startKey]=0 }
     local fScore = { [startKey]=heuristic(start,goals) }
 
+    local expansions, comparisons = 0, 0
     while #open > 0 do
+        expansions = expansions + 1
+        if expansions % 64 == 0 then sleep(0) end
+
         local bestIndex = 1
         for i=2,#open do
+            comparisons = comparisons + 1
+            if comparisons % 256 == 0 then sleep(0) end
             if (fScore[open[i]] or math.huge) < (fScore[open[bestIndex]] or math.huge) then
                 bestIndex = i
             end
