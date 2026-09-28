@@ -111,14 +111,22 @@ local function draw()
   else
     at(x+12,14,"sem sinal",colors.orange)
   end
-  at(x,16,"Camada:",colors.lightGray) at(x+12,16,tostring(t.layer).."/"..tostring(t.depth))
+  at(x,16,"Base GPS:",colors.lightGray)
+  if t.baseGps then
+    at(x+12,16,string.format("%.1f,%.1f,%.1f",t.baseGps.x,t.baseGps.y,t.baseGps.z),colors.cyan)
+  else
+    at(x+12,16,"nao registrada",colors.orange)
+  end
+  at(x,18,"Dist GPS:",colors.lightGray)
+  at(x+12,18,t.gpsDistance and string.format("%.1f",t.gpsDistance) or "?",colors.white)
+  at(x,20,"Camada:",colors.lightGray) at(x+12,20,tostring(t.layer).."/"..tostring(t.depth))
   local cells=tonumber(t.cells) or 0
   local cur=tonumber(t.cursor) or 0
   local pct=cells>0 and math.floor(cur/cells*100) or 0
-  at(x,18,"Progresso:",colors.lightGray) at(x+12,18,string.format("%d/%d %d%%",cur,cells,pct))
-  bar(x,19,math.min(28,w-x-1),cur,math.max(cells,1))
-  at(x,21,"Area:",colors.lightGray) at(x+12,21,string.format("%sx%sx%s",t.width or "?",t.length or "?",t.depth or "?"))
-  at(x,23,"Slots:",colors.lightGray) at(x+12,23,tostring(t.freeSlots or "?").."/16")
+  at(x,22,"Progresso:",colors.lightGray) at(x+12,22,string.format("%d/%d %d%%",cur,cells,pct))
+  bar(x,23,math.min(28,w-x-1),cur,math.max(cells,1))
+  at(x,25,"Area:",colors.lightGray) at(x+12,25,string.format("%sx%sx%s",t.width or "?",t.length or "?",t.depth or "?"))
+  at(x,27,"Slots:",colors.lightGray) at(x+12,27,tostring(t.freeSlots or "?").."/16")
   local by=h-4
   button("pause",x,by,10,"PAUSAR",colors.red)
   button("resume",x+12,by,10,"RETOMAR",colors.green)

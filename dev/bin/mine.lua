@@ -26,19 +26,34 @@ local function wirelessModem()
     return nil
 end
 
+local function locateGps(timeout)
+    if not gps or not gps.locate then return nil end
+    local ok, x, y, z = pcall(gps.locate, timeout or 1, false)
+    if ok and x then
+        telemetry.gx, telemetry.gy, telemetry.gz = x, y, z
+        telemetry.lastGps = os.clock()
+        return { x = x, y = y, z = z }
+    end
+    return nil
+end
+
 local function updateGps()
-    if not gps or not gps.locate then return end
     local now = os.clock()
     if now - telemetry.lastGps < 5 then return end
     telemetry.lastGps = now
-    local ok, x, y, z = pcall(gps.locate, 1, false)
-    if ok and x then telemetry.gx, telemetry.gy, telemetry.gz = x, y, z end
+    locateGps(1)
 end
 
 local function sendTelemetry()
     if not s or not rednet or not wirelessModem() then return end
     updateGps()
     local level = turtle.getFuelLevel()
+    local gpsDistance
+    if s.baseGps and telemetry.gx then
+        gpsDistance = math.abs(telemetry.gx - s.baseGps.x)
+            + math.abs(telemetry.gy - s.baseGps.y)
+            + math.abs(telemetry.gz - s.baseGps.z)
+    end
     local free = 0
     for i = 1, 16 do if turtle.getItemCount(i) == 0 then free = free + 1 end end
     rednet.broadcast({
@@ -50,6 +65,8 @@ local function sendTelemetry()
         mode = s.mode,
         x = s.x, y = s.y, z = s.z, dir = s.dir,
         gps = telemetry.gx and { x = telemetry.gx, y = telemetry.gy, z = telemetry.gz } or nil,
+        baseGps = s.baseGps,
+        gpsDistance = gpsDistance,
         width = s.width, length = s.length, depth = s.depth,
         layer = s.layer, cursor = s.cursor,
         cells = s.width * s.length,
@@ -541,6 +558,15 @@ local function main()
         print("Camada: " .. math.min(s.layer, s.depth) .. "; celulas: " .. s.cursor .. "/" .. s.width * s.length)
         print("Posicao relativa: " .. s.x .. "," .. s.y .. "," .. s.z .. "; direcao: " .. s.dir)
         print("Combustivel: " .. tostring(turtle.getFuelLevel()))
+        updateGps()
+        if s.baseGps then
+            print(string.format("GPS base: %.1f, %.1f, %.1f", s.baseGps.x, s.baseGps.y, s.baseGps.z))
+        else
+            print("GPS base: nao registrada")
+        end
+        if telemetry.gx then
+            print(string.format("GPS atual: %.1f, %.1f, %.1f", telemetry.gx, telemetry.gy, telemetry.gz))
+        end
         sendTelemetry()
         if s.pending then print("Posicao incerta: use recover-home apos recolocar na origem.") end
         return
@@ -551,6 +577,13 @@ local function main()
         write("Digite ORIGEM para confirmar: ")
         if read() ~= "ORIGEM" then print("Cancelado."); return end
         s.x, s.y, s.z, s.dir, s.pending, s.mode = 0, 0, 0, 0, nil, "dock"
+        local base = locateGps(2)
+        if base then
+            s.baseGps = base
+            print(string.format("GPS da base recalibrado: %.1f, %.1f, %.1f", base.x, base.y, base.z))
+        else
+            print("GPS sem sinal; mantendo a base GPS anterior.")
+        end
         save()
         print("Origem registrada. Execute dev mine resume.")
         return
@@ -596,8 +629,15 @@ local function main()
     print("Bau atras; primeiro item acessivel usado para abastecer. Nao mova a turtle durante a tarefa.")
     write("Digite MINERAR para iniciar: ")
     if read() ~= "MINERAR" then print("Cancelado."); return end
+    local baseGps = locateGps(2)
+    if baseGps then
+        print(string.format("Base GPS registrada: %.1f, %.1f, %.1f", baseGps.x, baseGps.y, baseGps.z))
+    else
+        print("GPS sem sinal. A mineracao continuara usando coordenadas relativas.")
+    end
     s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
-        minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0 }
+        minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0,
+        baseGps=baseGps }
     save()
     runControlled()
 end
