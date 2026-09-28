@@ -85,6 +85,11 @@ O programa ainda pede `MINERAR` antes de iniciar.
 
 ### Comportamento
 
+- Ao concluir uma camada, a turtle retorna apenas pela area ja minerada ate a coluna inicial e desce para a proxima camada, sem subir a superficie.
+- A superficie so e usada quando o inventario fica sem espaco util, quando o combustivel atinge o limite de retorno, no fim da tarefa ou por comando manual.
+- `minecraft:cobblestone` e `minecraft:dirt` sao descartados automaticamente com `dropDown()` para liberar slots antes de decidir retornar.
+
+
 - Antes de iniciar uma camada, verifica o bloco abaixo na coluna inicial.
   Se nao detectar bloco, desce diretamente e pula essa camada, sem percorrer
   o retangulo. Repete ate encontrar um bloco ou atingir a profundidade escolhida.
