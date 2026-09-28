@@ -74,7 +74,9 @@ O programa ainda pede `MINERAR` antes de iniciar.
 - Se houver `dev fuel set x y z`, a turtle usa esse bau exclusivamente para
   abastecimento. Quando precisa de combustivel, primeiro retorna a base da tarefa,
   depois segue por GPS ate uma posicao adjacente ao bau, sem quebrar blocos.
-  O trajeto precisa estar livre; se houver obstaculo, ela para e informa o erro.
+  O trajeto usa A* em 3D. Ao encontrar um obstaculo, marca aquela coordenada
+  como bloqueada e recalcula automaticamente a melhor rota conhecida, podendo
+  contornar pelos lados ou por cima/baixo quando houver espaco.
 - Se nenhum fuel place estiver configurado, mantem compatibilidade com o
   abastecimento pelo bau da base.
 - Qualquer item aceito por `turtle.refuel(0)` pode ser usado. No caso de
