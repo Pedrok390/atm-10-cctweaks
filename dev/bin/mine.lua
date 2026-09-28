@@ -545,16 +545,22 @@ local function copyPos(p)
     return { x=p.x, y=p.y, z=p.z }
 end
 
+-- Prefer vertical movement first. If Y cannot be changed because a block is
+-- discovered, A* may still move in X/Z to find another vertical corridor.
 local NEIGHBORS = {
-    {x=1,y=0,z=0}, {x=-1,y=0,z=0},
     {x=0,y=1,z=0}, {x=0,y=-1,z=0},
+    {x=1,y=0,z=0}, {x=-1,y=0,z=0},
     {x=0,y=0,z=1}, {x=0,y=0,z=-1},
 }
 
 local function heuristic(p, goals)
     local best
     for _, g in ipairs(goals) do
-        local d = manhattan(p, g)
+        local dy = math.abs(p.y-g.y)
+        local horizontal = math.abs(p.x-g.x) + math.abs(p.z-g.z)
+        -- Weighted Y bias: reaching the target height is preferred before
+        -- spending moves on X/Z, while still allowing horizontal detours.
+        local d = dy * 32 + horizontal
         if not best or d < best then best = d end
     end
     return best or 0
@@ -588,9 +594,15 @@ local function aStar(start, goals, blocked, margin)
     local came, gScore = {}, { [startKey]=0 }
     local fScore = { [startKey]=heuristic(start,goals) }
 
+    local expansions, comparisons = 0, 0
     while #open > 0 do
+        expansions = expansions + 1
+        if expansions % 64 == 0 then sleep(0) end
+
         local bestIndex = 1
         for i=2,#open do
+            comparisons = comparisons + 1
+            if comparisons % 256 == 0 then sleep(0) end
             if (fScore[open[i]] or math.huge) < (fScore[open[bestIndex]] or math.huge) then
                 bestIndex = i
             end
