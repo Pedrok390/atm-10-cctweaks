@@ -544,7 +544,7 @@ local function safeRawForward(nav)
     return true
 end
 
-local function rawMoveTo(nav, target)
+local function rawVertical(nav, target)
     while nav.pos.y < target.y do
         if turtle.detectUp() then return false, "bloco acima" end
         local ok, reason = turtle.up()
@@ -557,7 +557,10 @@ local function rawMoveTo(nav, target)
         if not ok then return false, tostring(reason) end
         nav.pos.y = nav.pos.y - 1
     end
+    return true
+end
 
+local function rawHorizontal(nav, target)
     while nav.pos.x ~= target.x do
         nav.heading = turnRaw(nav.heading, nav.pos.x < target.x and 1 or 3)
         local ok, reason = safeRawForward(nav)
@@ -569,6 +572,18 @@ local function rawMoveTo(nav, target)
         if not ok then return false, reason end
     end
     return true
+end
+
+local function rawMoveTo(nav, target, verticalFirst)
+    local ok, reason
+    if verticalFirst then
+        ok, reason = rawVertical(nav, target)
+        if not ok then return false, reason end
+        return rawHorizontal(nav, target)
+    end
+    ok, reason = rawHorizontal(nav, target)
+    if not ok then return false, reason end
+    return rawVertical(nav, target)
 end
 
 local function fuelStandTargets(place)
@@ -602,6 +617,9 @@ local function refuelAtConfiguredPlace()
 
     local base = {x=coord(s.baseGps.x),y=coord(s.baseGps.y),z=coord(s.baseGps.z)}
     local target, trip = chooseFuelTarget(place, base)
+    if fuel() >= miningFuelNeeded() then
+        return
+    end
     if fuel() < trip + 4 then
         error("Combustivel insuficiente para chegar ao bau configurado. Abasteca manualmente uma vez.", 0)
     end
@@ -617,24 +635,27 @@ local function refuelAtConfiguredPlace()
         error(err, 0)
     end
 
-    local ok, reason = rawMoveTo(nav, target)
+    local ok, reason = rawMoveTo(nav, target, true)
     if not ok then
         -- The path already travelled should still be clear, so try to retreat.
-        rawMoveTo(nav, base)
-        nav.heading = turnRaw(nav.heading, nav.originalHeading)
-        s.pending = nil
-        save()
+        local ret = rawMoveTo(nav, base, false)
+        if ret then
+            nav.heading = turnRaw(nav.heading, nav.originalHeading)
+            s.pending = nil
+            save()
+        end
         error("Caminho para o bau de combustivel bloqueado (" .. tostring(reason)
-            .. "). A turtle nao quebra blocos nesse trajeto.", 0)
+            .. "). A turtle nao quebra blocos nesse trajeto."
+            .. (ret and "" or " Nao consegui retornar automaticamente; use recover-home."), 0)
     end
 
     nav.heading = turnRaw(nav.heading, target.face)
     chest()
-    local needed = miningFuelNeeded() + trip + MARGIN
+    local needed = miningFuelNeeded() + trip
     refuelFromFront(needed)
 
     print("Combustivel pronto. Voltando para a base...")
-    ok, reason = rawMoveTo(nav, base)
+    ok, reason = rawMoveTo(nav, base, false)
     if not ok then
         error("Caminho de volta da area de combustivel bloqueado: " .. tostring(reason), 0)
     end
