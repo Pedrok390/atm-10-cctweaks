@@ -883,20 +883,41 @@ local function refuelAtConfiguredPlace()
     local needed = miningFuelNeeded() + routeOut + MARGIN
     refuelFromFront(needed)
 
-    print("Combustivel pronto. Calculando rota de volta para a base...")
-    s.returnReason = "VOLTANDO DO COMBUSTIVEL"
+    print("Combustivel pronto. Voltando automaticamente para a origem...")
+    s.returnReason = "VOLTANDO A ORIGEM"
+    routeInfo.state = "VOLTANDO A ORIGEM"
+    routeInfo.remaining = nil
     sendTelemetry()
+
     ok,target = navigateAStar(nav,{base},blocked)
     if not ok then
-        error("Nao encontrei rota livre de volta para a base: " .. tostring(target),0)
+        error("Nao encontrei rota livre de volta para a origem: " .. tostring(target),0)
     end
+
+    -- Confirm the physical GPS position before considering the fuel trip done.
+    local confirmed = gpsPoint(2)
+    if not confirmed or confirmed.x ~= base.x or confirmed.y ~= base.y or confirmed.z ~= base.z then
+        local where = confirmed and (confirmed.x..","..confirmed.y..","..confirmed.z) or "sem GPS"
+        error("Retorno do combustivel nao confirmou a origem. Posicao atual: "..where
+            .."; esperada: "..base.x..","..base.y..","..base.z,0)
+    end
+
     nav.heading = turnRaw(nav.heading, nav.originalHeading)
+    routeInfo.state = "NA ORIGEM"
+    routeInfo.remaining = 0
+    s.returnReason = "NA ORIGEM"
+    s.pending = nil
+    save()
+    sendTelemetry()
+    print("Turtle confirmou a origem apos abastecer.")
+
+    -- Keep the confirmation visible briefly before normal mining telemetry resumes.
+    sleep(0.5)
     routeInfo.state=nil
     routeInfo.remaining=nil
     routeInfo.replans=0
-    s.pending = nil
+    s.returnReason=nil
     save()
-    print("Turtle novamente na base apos abastecer.")
 end
 
 local function refuelAtHome()
