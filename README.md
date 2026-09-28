@@ -27,6 +27,8 @@ programa: ele roda localmente, sem depender do computador da base.
 ```text
 dev fuel set <x> <y> <z>
 dev fuel show
+dev fuel map show
+dev fuel map clear
 ```
 
    As coordenadas sao do proprio bau. A turtle precisa ter GPS funcionando.
@@ -76,7 +78,9 @@ O programa ainda pede `MINERAR` antes de iniciar.
   depois segue por GPS ate uma posicao adjacente ao bau, sem quebrar blocos.
   O trajeto usa A* em 3D. Ao encontrar um obstaculo, marca aquela coordenada
   como bloqueada e recalcula automaticamente a melhor rota conhecida, podendo
-  contornar pelos lados ou por cima/baixo quando houver espaco.
+  contornar pelos lados ou por cima/baixo quando houver espaco. Os obstaculos
+  descobertos sao salvos em `/dev/fuel-map`, entao viagens futuras ja evitam
+  paredes conhecidas. Use `dev fuel map clear` se alterar fisicamente o caminho.
 - Se nenhum fuel place estiver configurado, mantem compatibilidade com o
   abastecimento pelo bau da base.
 - Qualquer item aceito por `turtle.refuel(0)` pode ser usado. No caso de

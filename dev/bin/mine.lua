@@ -3,12 +3,14 @@
 local args = { ... }
 local STATE = "/dev/mine-state"
 local FUEL_PLACE = "/dev/fuel-place"
+local FUEL_MAP = "/dev/fuel-map"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local COMMAND_PROTOCOL = "atm10:mine:command"
 local s
 local save
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
+local routeInfo = { state=nil, replans=0, remaining=nil, known=0 }
 local returningHome = false
 
 local function wirelessModem()
@@ -61,6 +63,41 @@ local function coord(n)
     return math.floor(tonumber(n) + 0.5)
 end
 
+local function sameFuelPlace(a,b)
+    return a and b and tonumber(a.x)==tonumber(b.x)
+        and tonumber(a.y)==tonumber(b.y) and tonumber(a.z)==tonumber(b.z)
+end
+
+local function countKeys(t)
+    local n=0
+    for _ in pairs(t or {}) do n=n+1 end
+    return n
+end
+
+local function loadFuelMap()
+    local place=loadFuelPlace()
+    if not place or not fs.exists(FUEL_MAP) then return {},0 end
+    local h=fs.open(FUEL_MAP,"r")
+    if not h then return {},0 end
+    local raw=h.readAll()
+    h.close()
+    local ok,t=pcall(textutils.unserialize,raw or "")
+    if not ok or type(t)~="table" or not sameFuelPlace(t.place,place)
+        or type(t.blocked)~="table" then return {},0 end
+    return t.blocked,countKeys(t.blocked)
+end
+
+local function saveFuelMap(blocked)
+    local place=loadFuelPlace()
+    if not place then return end
+    fs.makeDir("/dev")
+    local h=fs.open(FUEL_MAP,"w")
+    if not h then return end
+    h.write(textutils.serialize({version=1,place=place,blocked=blocked}))
+    h.close()
+    routeInfo.known=countKeys(blocked)
+end
+
 local function fuelBaseDistance()
     local p = loadFuelPlace()
     if not p or not s or not s.baseGps then return 0 end
@@ -95,6 +132,10 @@ local function sendTelemetry()
         gpsDistance = gpsDistance,
         fuelPlace = loadFuelPlace(),
         fuelTrip = fuelBaseDistance(),
+        routeState = routeInfo.state,
+        routeReplans = routeInfo.replans,
+        routeRemaining = routeInfo.remaining,
+        routeKnown = routeInfo.known,
         width = s.width, length = s.length, depth = s.depth,
         layer = s.layer, cursor = s.cursor,
         cells = s.width * s.length,
@@ -648,18 +689,26 @@ local function headingForStep(from, to)
     return nil
 end
 
+local function markBlocked(blocked,p)
+    local k=posKey(p)
+    if not blocked[k] then
+        blocked[k]=true
+        saveFuelMap(blocked)
+    end
+end
+
 local function tryRawStep(nav, nextPos, blocked)
     local dy = nextPos.y - nav.pos.y
     local ok, reason
     if dy == 1 then
         if turtle.detectUp() then
-            blocked[posKey(nextPos)] = true
+            markBlocked(blocked,nextPos)
             return false, "bloco acima"
         end
         ok,reason = turtle.up()
     elseif dy == -1 then
         if turtle.detectDown() then
-            blocked[posKey(nextPos)] = true
+            markBlocked(blocked,nextPos)
             return false, "bloco abaixo"
         end
         ok,reason = turtle.down()
@@ -668,14 +717,14 @@ local function tryRawStep(nav, nextPos, blocked)
         if h == nil then return false,"passo invalido" end
         nav.heading = turnRaw(nav.heading,h)
         if turtle.detect() then
-            blocked[posKey(nextPos)] = true
+            markBlocked(blocked,nextPos)
             return false, "bloco a frente"
         end
         ok,reason = turtle.forward()
     end
 
     if not ok then
-        blocked[posKey(nextPos)] = true
+        markBlocked(blocked,nextPos)
         return false,tostring(reason)
     end
     nav.pos = copyPos(nextPos)
@@ -685,31 +734,56 @@ end
 local function navigateAStar(nav, goals, blocked)
     local margins = {4,8,16,32,64}
     local replans = 0
+    routeInfo.state="CALCULANDO"
+    routeInfo.remaining=nil
+    routeInfo.known=countKeys(blocked)
+    sendTelemetry()
+
     while replans < 256 do
         replans = replans + 1
+        routeInfo.replans=replans
         local path,target
         for _, margin in ipairs(margins) do
             path,target = aStar(nav.pos,goals,blocked,margin)
             if path then break end
         end
         if not path then
+            routeInfo.state="SEM ROTA"
+            routeInfo.remaining=nil
+            sendTelemetry()
             return false,"nenhuma rota encontrada dentro do limite de busca"
         end
 
+        routeInfo.state="NAVEGANDO"
+        routeInfo.remaining=#path
+        sendTelemetry()
+
         local changed = false
-        for _, nextPos in ipairs(path) do
+        for i,nextPos in ipairs(path) do
             local ok,reason = tryRawStep(nav,nextPos,blocked)
+            routeInfo.remaining=#path-i
+            if i%5==0 then sendTelemetry() end
             if not ok then
                 changed = true
                 print("Obstaculo detectado em " .. posKey(nextPos)
                     .. ". Recalculando rota...")
+                routeInfo.state="RECALCULANDO"
+                routeInfo.known=countKeys(blocked)
                 s.returnReason = "RECALCULANDO ROTA"
                 sendTelemetry()
                 break
             end
         end
-        if not changed then return true,target end
+        if not changed then
+            routeInfo.state="CHEGOU"
+            routeInfo.remaining=0
+            sendTelemetry()
+            return true,target
+        end
     end
+    routeInfo.state="SEM ROTA"
+    routeInfo.remaining=nil
+    sendTelemetry()
     return false,"limite de recalculos atingido"
 end
 
@@ -784,7 +858,13 @@ local function refuelAtConfiguredPlace()
         error(err, 0)
     end
 
-    local blocked = { [posKey({x=coord(place.x),y=coord(place.y),z=coord(place.z)})]=true }
+    local blocked,known = loadFuelMap()
+    blocked[posKey({x=coord(place.x),y=coord(place.y),z=coord(place.z)})]=true
+    routeInfo.known=math.max(known,countKeys(blocked))
+    routeInfo.replans=0
+    routeInfo.state="INDO AO COMBUSTIVEL"
+    routeInfo.remaining=nil
+    sendTelemetry()
     local ok,target = navigateAStar(nav,goals,blocked)
     if not ok then
         local retreat = navigateAStar(nav,{base},blocked)
@@ -803,17 +883,41 @@ local function refuelAtConfiguredPlace()
     local needed = miningFuelNeeded() + routeOut + MARGIN
     refuelFromFront(needed)
 
-    print("Combustivel pronto. Calculando rota de volta para a base...")
-    s.returnReason = "VOLTANDO DO COMBUSTIVEL"
+    print("Combustivel pronto. Voltando automaticamente para a origem...")
+    s.returnReason = "VOLTANDO A ORIGEM"
+    routeInfo.state = "VOLTANDO A ORIGEM"
+    routeInfo.remaining = nil
     sendTelemetry()
+
     ok,target = navigateAStar(nav,{base},blocked)
     if not ok then
-        error("Nao encontrei rota livre de volta para a base: " .. tostring(target),0)
+        error("Nao encontrei rota livre de volta para a origem: " .. tostring(target),0)
     end
+
+    -- Confirm the physical GPS position before considering the fuel trip done.
+    local confirmed = gpsPoint(2)
+    if not confirmed or confirmed.x ~= base.x or confirmed.y ~= base.y or confirmed.z ~= base.z then
+        local where = confirmed and (confirmed.x..","..confirmed.y..","..confirmed.z) or "sem GPS"
+        error("Retorno do combustivel nao confirmou a origem. Posicao atual: "..where
+            .."; esperada: "..base.x..","..base.y..","..base.z,0)
+    end
+
     nav.heading = turnRaw(nav.heading, nav.originalHeading)
+    routeInfo.state = "NA ORIGEM"
+    routeInfo.remaining = 0
+    s.returnReason = "NA ORIGEM"
     s.pending = nil
     save()
-    print("Turtle novamente na base apos abastecer.")
+    sendTelemetry()
+    print("Turtle confirmou a origem apos abastecer.")
+
+    -- Keep the confirmation visible briefly before normal mining telemetry resumes.
+    sleep(0.5)
+    routeInfo.state=nil
+    routeInfo.remaining=nil
+    routeInfo.replans=0
+    s.returnReason=nil
+    save()
 end
 
 local function refuelAtHome()
