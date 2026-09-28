@@ -14,6 +14,8 @@ if command == "help" then
     print("dev fuel set x y z - Define o bau de combustivel")
     print("dev fuel show      - Mostra o bau configurado")
     print("dev fuel clear     - Remove o bau configurado")
+    print("dev fuel map show  - Mostra obstaculos aprendidos")
+    print("dev fuel map clear - Limpa o mapa da rota")
     print("dev update         - Atualiza pela branch main")
 elseif command == "status" then
     print("ATM10 DevKit 0.2.0")
