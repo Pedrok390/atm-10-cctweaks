@@ -12,6 +12,10 @@ local s
 local save
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
 local routeInfo = { state=nil, replans=0, remaining=nil, known=0 }
+local TRASH_ITEMS = {
+    ["minecraft:cobblestone"] = true,
+    ["minecraft:dirt"] = true,
+}
 local returningHome = false
 
 local function wirelessModem()
@@ -232,6 +236,9 @@ local function help()
     print("Area: para a frente e para a direita; primeira camada logo ABAIXO.")
     print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
     print("Camadas de ar contam no limite de profundidade escolhido.")
+    print("Ao terminar uma camada, continua para a proxima sem subir.")
+    print("So volta a superficie por inventario cheio, combustivel baixo, fim ou comando.")
+    print("Cobblestone e dirt sao descartados automaticamente.")
     print("O abastecimento aceita qualquer item reconhecido por turtle.refuel(0).")
     print("Use dev fuel set <x> <y> <z> para definir o bau de combustivel.")
     print("Ao abastecer, volta primeiro a base e depois vai ao bau SEM quebrar blocos.")
@@ -329,6 +336,28 @@ local function emptySlots()
     return n
 end
 
+local function discardTrash()
+    local previous = turtle.getSelectedSlot()
+    local discarded = 0
+    for i = 1, 16 do
+        if turtle.getItemCount(i) > 0 then
+            local detail = turtle.getItemDetail(i)
+            if detail and TRASH_ITEMS[detail.name] then
+                turtle.select(i)
+                local count = turtle.getItemCount(i)
+                if turtle.dropDown() then discarded = discarded + count end
+            end
+        end
+    end
+    turtle.select(previous)
+    return discarded
+end
+
+local function inventoryFull()
+    discardTrash()
+    return emptySlots() == 0
+end
+
 local function distance()
     return s.x + s.z - s.y
 end
@@ -359,10 +388,21 @@ local function step(kind)
     for attempt = 1, 12 do
         if shouldAbortWork() then return false end
         if detect() then
-            if emptySlots() < 2 then error("Sem espaco para remover bloqueio do caminho. Libere 2 slots e use resume.", 0) end
+            discardTrash()
+            if emptySlots() == 0 then
+                if not returningHome then
+                    s.returnReason = "INVENTARIO"
+                    s.mode = "home"
+                    save()
+                    print("Inventario cheio. Retornando para descarregar...")
+                    return false
+                end
+                error("Inventario cheio durante retorno e caminho bloqueado. Libere espaco e use resume.", 0)
+            end
             local dug, reason = dig()
             if not dug then error("Bloco nao pode ser minerado: " .. tostring(reason) .. ". Remova o bloqueio e use resume.", 0) end
             s.dug = (s.dug or 0) + 1
+            discardTrash()
             save()
         end
         local ok, err = action(kind, move, function()
@@ -392,12 +432,17 @@ local function alongZ(z)
     return true
 end
 
+local function returnToShaft()
+    if s.z > 0 and not alongZ(s.z - 1) then return false end
+    if not alongX(0) then return false end
+    if not alongZ(0) then return false end
+    return true
+end
+
 local function home()
     returningHome = true
-    -- The previous row is fully cleared, unlike the unfinished current row.
-    if s.z > 0 then alongZ(s.z - 1) end
-    alongX(0)
-    alongZ(0)
+    -- Return through the already-cleared mine to the shaft, then surface.
+    returnToShaft()
     while s.y < 0 do step("up") end
     face(2)
     returningHome = false
@@ -413,7 +458,7 @@ local function travel()
     if s.cursor == 0 then
         -- Reach the cell ABOVE the next layer using the known home shaft.
         while s.y > 1 - s.layer do if not step("down") then return end end
-        if fuel() <= returnThreshold() or emptySlots() <= 2 then
+        if fuel() <= returnThreshold() or inventoryFull() then
             s.returnReason = fuel() <= returnThreshold() and "COMBUSTIVEL BAIXO" or "INVENTARIO"
             s.mode = "home"
             save()
@@ -1059,18 +1104,37 @@ local function run()
         elseif s.mode == "travel" then
             travel()
         elseif s.mode == "mine" then
+            discardTrash()
             if s.cursor == s.width * s.length then
-                s.mode = "home"
-                save()
-            elseif emptySlots() <= 2 or fuel() <= returnThreshold() then
+                print("Camada " .. s.layer .. " finalizada.")
+                if s.layer == s.depth then
+                    s.returnReason = "CONCLUIDO"
+                    s.mode = "home"
+                    save()
+                elseif fuel() <= returnThreshold() or inventoryFull() then
+                    s.returnReason = fuel() <= returnThreshold() and "COMBUSTIVEL BAIXO" or "INVENTARIO"
+                    print("Voltando para a superficie: " .. s.returnReason .. "...")
+                    s.mode = "home"
+                    save()
+                elseif returnToShaft() then
+                    s.layer = s.layer + 1
+                    s.cursor = 0
+                    s.dug = 0
+                    s.entering = nil
+                    s.mode = "travel"
+                    save()
+                    print("Descendo para a camada " .. s.layer .. " sem voltar a superficie.")
+                end
+            elseif inventoryFull() or fuel() <= returnThreshold() then
                 s.returnReason = fuel() <= returnThreshold() and "COMBUSTIVEL BAIXO" or "INVENTARIO"
-                print("Voltando ao bau: " .. s.returnReason .. "...")
+                print("Voltando para a superficie: " .. s.returnReason .. "...")
                 s.mode = "home"
                 save()
             else
                 local x, z = cell(s.cursor + 1)
                 if alongX(x) and alongZ(z) and s.mode ~= "home" then
                     s.cursor = s.cursor + 1
+                    discardTrash()
                     save()
                 end
             end
