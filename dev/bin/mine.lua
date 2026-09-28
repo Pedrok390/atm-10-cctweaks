@@ -2,6 +2,7 @@
 -- Coordinates: x = right, z = forward, y = up; direction 0 = forward.
 local args = { ... }
 local STATE = "/dev/mine-state"
+local FUEL_PLACE = "/dev/fuel-place"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local COMMAND_PROTOCOL = "atm10:mine:command"
@@ -44,6 +45,31 @@ local function updateGps()
     locateGps(1)
 end
 
+local function loadFuelPlace()
+    if not fs.exists(FUEL_PLACE) then return nil end
+    local h = fs.open(FUEL_PLACE, "r")
+    if not h then return nil end
+    local raw = h.readAll()
+    h.close()
+    local ok, t = pcall(textutils.unserialize, raw or "")
+    if not ok or type(t) ~= "table" or tonumber(t.x) == nil
+        or tonumber(t.y) == nil or tonumber(t.z) == nil then return nil end
+    return { x = tonumber(t.x), y = tonumber(t.y), z = tonumber(t.z) }
+end
+
+local function coord(n)
+    return math.floor(tonumber(n) + 0.5)
+end
+
+local function fuelBaseDistance()
+    local p = loadFuelPlace()
+    if not p or not s or not s.baseGps then return 0 end
+    local bx, by, bz = coord(s.baseGps.x), coord(s.baseGps.y), coord(s.baseGps.z)
+    local cx, cy, cz = coord(p.x), coord(p.y), coord(p.z)
+    -- The turtle stops beside the chest, not inside it.
+    return math.max(0, math.abs(cx-bx) + math.abs(cy-by) + math.abs(cz-bz) - 1)
+end
+
 local function sendTelemetry()
     if not s or not rednet or not wirelessModem() then return end
     updateGps()
@@ -67,6 +93,8 @@ local function sendTelemetry()
         gps = telemetry.gx and { x = telemetry.gx, y = telemetry.gy, z = telemetry.gz } or nil,
         baseGps = s.baseGps,
         gpsDistance = gpsDistance,
+        fuelPlace = loadFuelPlace(),
+        fuelTrip = fuelBaseDistance(),
         width = s.width, length = s.length, depth = s.depth,
         layer = s.layer, cursor = s.cursor,
         cells = s.width * s.length,
@@ -146,6 +174,8 @@ local function help()
     print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
     print("Camadas de ar contam no limite de profundidade escolhido.")
     print("O abastecimento aceita qualquer item reconhecido por turtle.refuel(0).")
+    print("Use dev fuel set <x> <y> <z> para definir o bau de combustivel.")
+    print("Ao abastecer, volta primeiro a base e depois vai ao bau SEM quebrar blocos.")
     print("Recipientes restantes, como o balde da lava, voltam para o mesmo bau.")
     print("Ctrl+T interrompe. Nao mova/gire manualmente; use resume.")
 end
@@ -245,7 +275,7 @@ local function distance()
 end
 
 local function returnThreshold()
-    return distance() + MARGIN + 2
+    return distance() + fuelBaseDistance() + MARGIN + 2
 end
 
 shouldAbortWork = function()
