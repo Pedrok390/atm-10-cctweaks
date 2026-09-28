@@ -533,76 +533,213 @@ local function calibrateRawHeading()
     return nil, "Nao ha bloco livre ao redor da base para calibrar a direcao."
 end
 
-local function safeRawForward(nav)
-    if turtle.detect() then return false, "bloco no caminho" end
-    local ok, reason = turtle.forward()
-    if not ok then return false, tostring(reason) end
-    if nav.heading == 0 then nav.pos.z = nav.pos.z - 1
-    elseif nav.heading == 1 then nav.pos.x = nav.pos.x + 1
-    elseif nav.heading == 2 then nav.pos.z = nav.pos.z + 1
-    else nav.pos.x = nav.pos.x - 1 end
-    return true
+local function posKey(p)
+    return tostring(p.x) .. "," .. tostring(p.y) .. "," .. tostring(p.z)
 end
 
-local function rawVertical(nav, target)
-    while nav.pos.y < target.y do
-        if turtle.detectUp() then return false, "bloco acima" end
-        local ok, reason = turtle.up()
-        if not ok then return false, tostring(reason) end
-        nav.pos.y = nav.pos.y + 1
-    end
-    while nav.pos.y > target.y do
-        if turtle.detectDown() then return false, "bloco abaixo" end
-        local ok, reason = turtle.down()
-        if not ok then return false, tostring(reason) end
-        nav.pos.y = nav.pos.y - 1
-    end
-    return true
+local function manhattan(a, b)
+    return math.abs(a.x-b.x) + math.abs(a.y-b.y) + math.abs(a.z-b.z)
 end
 
-local function rawHorizontal(nav, target)
-    while nav.pos.x ~= target.x do
-        nav.heading = turnRaw(nav.heading, nav.pos.x < target.x and 1 or 3)
-        local ok, reason = safeRawForward(nav)
-        if not ok then return false, reason end
-    end
-    while nav.pos.z ~= target.z do
-        nav.heading = turnRaw(nav.heading, nav.pos.z < target.z and 2 or 0)
-        local ok, reason = safeRawForward(nav)
-        if not ok then return false, reason end
-    end
-    return true
+local function copyPos(p)
+    return { x=p.x, y=p.y, z=p.z }
 end
 
-local function rawMoveTo(nav, target, verticalFirst)
+local NEIGHBORS = {
+    {x=1,y=0,z=0}, {x=-1,y=0,z=0},
+    {x=0,y=1,z=0}, {x=0,y=-1,z=0},
+    {x=0,y=0,z=1}, {x=0,y=0,z=-1},
+}
+
+local function heuristic(p, goals)
+    local best
+    for _, g in ipairs(goals) do
+        local d = manhattan(p, g)
+        if not best or d < best then best = d end
+    end
+    return best or 0
+end
+
+local function reconstruct(came, nodes, key)
+    local path = {}
+    while came[key] do
+        table.insert(path, 1, nodes[key])
+        key = came[key]
+    end
+    return path
+end
+
+local function aStar(start, goals, blocked, margin)
+    local goalByKey = {}
+    local minX,maxX,minY,maxY,minZ,maxZ = start.x,start.x,start.y,start.y,start.z,start.z
+    for _, g in ipairs(goals) do
+        goalByKey[posKey(g)] = g
+        minX,maxX = math.min(minX,g.x),math.max(maxX,g.x)
+        minY,maxY = math.min(minY,g.y),math.max(maxY,g.y)
+        minZ,maxZ = math.min(minZ,g.z),math.max(maxZ,g.z)
+    end
+    minX,maxX,minY,maxY,minZ,maxZ =
+        minX-margin,maxX+margin,minY-margin,maxY+margin,minZ-margin,maxZ+margin
+
+    local startKey = posKey(start)
+    local open = { startKey }
+    local inOpen = { [startKey]=true }
+    local nodes = { [startKey]=copyPos(start) }
+    local came, gScore = {}, { [startKey]=0 }
+    local fScore = { [startKey]=heuristic(start,goals) }
+
+    while #open > 0 do
+        local bestIndex = 1
+        for i=2,#open do
+            if (fScore[open[i]] or math.huge) < (fScore[open[bestIndex]] or math.huge) then
+                bestIndex = i
+            end
+        end
+        local currentKey = table.remove(open,bestIndex)
+        inOpen[currentKey] = nil
+        local current = nodes[currentKey]
+
+        if goalByKey[currentKey] then
+            return reconstruct(came,nodes,currentKey),goalByKey[currentKey]
+        end
+
+        for _, d in ipairs(NEIGHBORS) do
+            local n = {x=current.x+d.x,y=current.y+d.y,z=current.z+d.z}
+            if n.x>=minX and n.x<=maxX and n.y>=minY and n.y<=maxY
+                and n.z>=minZ and n.z<=maxZ then
+                local nk = posKey(n)
+                if not blocked[nk] then
+                    local tentative = gScore[currentKey] + 1
+                    if tentative < (gScore[nk] or math.huge) then
+                        came[nk] = currentKey
+                        nodes[nk] = n
+                        gScore[nk] = tentative
+                        fScore[nk] = tentative + heuristic(n,goals)
+                        if not inOpen[nk] then
+                            open[#open+1] = nk
+                            inOpen[nk] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function headingForStep(from, to)
+    local dx,dz = to.x-from.x,to.z-from.z
+    if dx==1 and dz==0 then return 1 end
+    if dx==-1 and dz==0 then return 3 end
+    if dx==0 and dz==1 then return 2 end
+    if dx==0 and dz==-1 then return 0 end
+    return nil
+end
+
+local function tryRawStep(nav, nextPos, blocked)
+    local dy = nextPos.y - nav.pos.y
     local ok, reason
-    if verticalFirst then
-        ok, reason = rawVertical(nav, target)
-        if not ok then return false, reason end
-        return rawHorizontal(nav, target)
+    if dy == 1 then
+        if turtle.detectUp() then
+            blocked[posKey(nextPos)] = true
+            return false, "bloco acima"
+        end
+        ok,reason = turtle.up()
+    elseif dy == -1 then
+        if turtle.detectDown() then
+            blocked[posKey(nextPos)] = true
+            return false, "bloco abaixo"
+        end
+        ok,reason = turtle.down()
+    else
+        local h = headingForStep(nav.pos,nextPos)
+        if h == nil then return false,"passo invalido" end
+        nav.heading = turnRaw(nav.heading,h)
+        if turtle.detect() then
+            blocked[posKey(nextPos)] = true
+            return false, "bloco a frente"
+        end
+        ok,reason = turtle.forward()
     end
-    ok, reason = rawHorizontal(nav, target)
-    if not ok then return false, reason end
-    return rawVertical(nav, target)
+
+    if not ok then
+        blocked[posKey(nextPos)] = true
+        return false,tostring(reason)
+    end
+    nav.pos = copyPos(nextPos)
+    return true
+end
+
+local function navigateAStar(nav, goals, blocked)
+    local margins = {4,8,16,32,64}
+    local replans = 0
+    while replans < 256 do
+        replans = replans + 1
+        local path,target
+        for _, margin in ipairs(margins) do
+            path,target = aStar(nav.pos,goals,blocked,margin)
+            if path then break end
+        end
+        if not path then
+            return false,"nenhuma rota encontrada dentro do limite de busca"
+        end
+
+        local changed = false
+        for _, nextPos in ipairs(path) do
+            local ok,reason = tryRawStep(nav,nextPos,blocked)
+            if not ok then
+                changed = true
+                print("Obstaculo detectado em " .. posKey(nextPos)
+                    .. ". Recalculando rota...")
+                s.returnReason = "RECALCULANDO ROTA"
+                sendTelemetry()
+                break
+            end
+        end
+        if not changed then return true,target end
+    end
+    return false,"limite de recalculos atingido"
 end
 
 local function fuelStandTargets(place)
     local x,y,z = coord(place.x),coord(place.y),coord(place.z)
     return {
-        {x=x-1,y=y,z=z, face=1},
-        {x=x+1,y=y,z=z, face=3},
-        {x=x,y=y,z=z-1, face=2},
-        {x=x,y=y,z=z+1, face=0},
+        {x=x-1,y=y,z=z,face=1},
+        {x=x+1,y=y,z=z,face=3},
+        {x=x,y=y,z=z-1,face=2},
+        {x=x,y=y,z=z+1,face=0},
     }
 end
 
-local function chooseFuelTarget(place, base)
-    local best, bestD
-    for _, t in ipairs(fuelStandTargets(place)) do
-        local d = math.abs(t.x-base.x)+math.abs(t.y-base.y)+math.abs(t.z-base.z)
-        if not bestD or d < bestD then best,bestD=t,d end
+local function calibrateRawHeading()
+    local origin = gpsPoint(2)
+    if not origin then return nil, "GPS sem sinal na base." end
+
+    local turns = 0
+    for _ = 1, 4 do
+        if not turtle.detect() then
+            local ok = turtle.forward()
+            if ok then
+                local now = gpsPoint(2)
+                turtle.back()
+                if not now then
+                    for _ = 1, turns do turtle.turnLeft() end
+                    return nil, "GPS sumiu durante calibracao."
+                end
+                local moved = headingFromDelta(now.x-origin.x,now.z-origin.z)
+                if not moved then
+                    for _ = 1, turns do turtle.turnLeft() end
+                    return nil, "Nao foi possivel determinar orientacao pelo GPS."
+                end
+                local original = (moved-turns)%4
+                return {pos=origin,heading=moved,originalHeading=original}
+            end
+        end
+        turtle.turnRight()
+        turns = turns + 1
     end
-    return best, bestD
+    for _ = 1, turns%4 do turtle.turnLeft() end
+    return nil,"Nao ha bloco livre ao redor da base para calibrar a direcao."
 end
 
 local function refuelAtConfiguredPlace()
@@ -616,12 +753,12 @@ local function refuelAtConfiguredPlace()
     end
 
     local base = {x=coord(s.baseGps.x),y=coord(s.baseGps.y),z=coord(s.baseGps.z)}
-    local target, trip = chooseFuelTarget(place, base)
-    if fuel() >= miningFuelNeeded() then
-        return
-    end
-    if fuel() < trip + 4 then
-        error("Combustivel insuficiente para chegar ao bau configurado. Abasteca manualmente uma vez.", 0)
+    local goals = fuelStandTargets(place)
+    local directTrip = math.huge
+    for _,g in ipairs(goals) do directTrip=math.min(directTrip,manhattan(base,g)) end
+    if fuel() >= miningFuelNeeded() then return end
+    if fuel() < directTrip + MARGIN then
+        error("Combustivel insuficiente para procurar rota ate o bau configurado. Abasteca manualmente uma vez.", 0)
     end
 
     s.pending = "fuel-trip"
@@ -635,29 +772,31 @@ local function refuelAtConfiguredPlace()
         error(err, 0)
     end
 
-    local ok, reason = rawMoveTo(nav, target, true)
+    local blocked = { [posKey({x=coord(place.x),y=coord(place.y),z=coord(place.z)})]=true }
+    local ok,target = navigateAStar(nav,goals,blocked)
     if not ok then
-        -- The path already travelled should still be clear, so try to retreat.
-        local ret = rawMoveTo(nav, base, false)
-        if ret then
-            nav.heading = turnRaw(nav.heading, nav.originalHeading)
+        local retreat = navigateAStar(nav,{base},blocked)
+        if retreat then
+            nav.heading = turnRaw(nav.heading,nav.originalHeading)
             s.pending = nil
             save()
         end
-        error("Caminho para o bau de combustivel bloqueado (" .. tostring(reason)
-            .. "). A turtle nao quebra blocos nesse trajeto."
-            .. (ret and "" or " Nao consegui retornar automaticamente; use recover-home."), 0)
+        error("Nao encontrei rota livre ate o bau de combustivel: " .. tostring(target)
+            .. ". Nenhum bloco foi quebrado.",0)
     end
 
-    nav.heading = turnRaw(nav.heading, target.face)
+    nav.heading = turnRaw(nav.heading,target.face)
     chest()
-    local needed = miningFuelNeeded() + trip
+    local routeOut = manhattan(base,target)
+    local needed = miningFuelNeeded() + routeOut + MARGIN
     refuelFromFront(needed)
 
-    print("Combustivel pronto. Voltando para a base...")
-    ok, reason = rawMoveTo(nav, base, false)
+    print("Combustivel pronto. Calculando rota de volta para a base...")
+    s.returnReason = "VOLTANDO DO COMBUSTIVEL"
+    sendTelemetry()
+    ok,target = navigateAStar(nav,{base},blocked)
     if not ok then
-        error("Caminho de volta da area de combustivel bloqueado: " .. tostring(reason), 0)
+        error("Nao encontrei rota livre de volta para a base: " .. tostring(target),0)
     end
     nav.heading = turnRaw(nav.heading, nav.originalHeading)
     s.pending = nil
