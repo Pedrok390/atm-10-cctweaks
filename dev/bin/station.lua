@@ -33,6 +33,7 @@ if cmd=="set" then
   local t=loadAll()
   t.stations[name]={x=x,y=y,z=z}
   saveAll(t)
+  if name=="fuel" and fs.exists("/dev/fuel-map") then fs.delete("/dev/fuel-map") end
   print(string.format("Station %s = %.1f, %.1f, %.1f",name,x,y,z))
 elseif cmd=="show" then
   local name=args[2]
