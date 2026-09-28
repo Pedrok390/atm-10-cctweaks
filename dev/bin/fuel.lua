@@ -1,5 +1,6 @@
 local args={...}
 local PATH="/dev/fuel-place"
+local MAP="/dev/fuel-map"
 
 local function save(t)
   fs.makeDir("/dev")
@@ -27,6 +28,7 @@ if cmd=="set" then
     error("Uso: dev fuel set <x> <y> <z>",0)
   end
   save({version=1,x=x,y=y,z=z})
+  if fs.exists(MAP) then fs.delete(MAP) end
   print(string.format("Bau de combustivel salvo em: %.1f, %.1f, %.1f",x,y,z))
   print("A mining turtle usara este ponto quando precisar abastecer.")
 elseif cmd=="show" then
@@ -39,7 +41,25 @@ elseif cmd=="show" then
   end
 elseif cmd=="clear" then
   if fs.exists(PATH) then fs.delete(PATH) end
-  print("Configuracao do bau de combustivel removida.")
+  if fs.exists(MAP) then fs.delete(MAP) end
+  print("Configuracao do bau de combustivel e mapa removidos.")
+elseif cmd=="map" and args[2]=="clear" and not args[3] then
+  if fs.exists(MAP) then fs.delete(MAP) end
+  print("Mapa aprendido da rota de combustivel apagado.")
+elseif cmd=="map" and args[2]=="show" and not args[3] then
+  if not fs.exists(MAP) then
+    print("Nenhum mapa de rota salvo.")
+  else
+    local h=fs.open(MAP,"r")
+    local raw=h and h.readAll() or nil
+    if h then h.close() end
+    local ok,t=pcall(textutils.unserialize,raw or "")
+    local n=0
+    if ok and type(t)=="table" and type(t.blocked)=="table" then
+      for _ in pairs(t.blocked) do n=n+1 end
+    end
+    print("Obstaculos conhecidos: "..n)
+  end
 else
-  error("Uso: dev fuel set <x> <y> <z> | show | clear",0)
+  error("Uso: dev fuel set <x> <y> <z> | show | clear | map show | map clear",0)
 end
