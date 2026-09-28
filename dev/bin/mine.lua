@@ -3,6 +3,7 @@
 local args = { ... }
 local STATE = "/dev/mine-state"
 local FUEL_PLACE = "/dev/fuel-place"
+local STATIONS = "/dev/stations"
 local FUEL_MAP = "/dev/fuel-map"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
@@ -47,7 +48,23 @@ local function updateGps()
     locateGps(1)
 end
 
+local function loadStation(name)
+    if not fs.exists(STATIONS) then return nil end
+    local h=fs.open(STATIONS,"r")
+    if not h then return nil end
+    local raw=h.readAll()
+    h.close()
+    local ok,t=pcall(textutils.unserialize,raw or "")
+    if not ok or type(t)~="table" or type(t.stations)~="table" then return nil end
+    local p=t.stations[name]
+    if type(p)~="table" or tonumber(p.x)==nil or tonumber(p.y)==nil or tonumber(p.z)==nil then return nil end
+    return {x=tonumber(p.x),y=tonumber(p.y),z=tonumber(p.z)}
+end
+
 local function loadFuelPlace()
+    local station=loadStation("fuel")
+    if station then return station end
+    -- Legacy compatibility for installations configured before stations.
     if not fs.exists(FUEL_PLACE) then return nil end
     local h = fs.open(FUEL_PLACE, "r")
     if not h then return nil end
@@ -131,6 +148,7 @@ local function sendTelemetry()
         baseGps = s.baseGps,
         gpsDistance = gpsDistance,
         fuelPlace = loadFuelPlace(),
+        unloadPlace = loadStation("unload"),
         fuelTrip = fuelBaseDistance(),
         routeState = routeInfo.state,
         routeReplans = routeInfo.replans,
@@ -462,7 +480,9 @@ local function waitFor(message)
     sleep(5)
 end
 
-local function unload()
+local unloadAtConfiguredStation
+
+local function unloadAtBase()
     face(2)
     while true do
         chest() -- Never drop into the world if the chest is absent.
@@ -924,6 +944,77 @@ local function refuelAtHome()
     refuelAtConfiguredPlace()
 end
 
+unloadAtConfiguredStation = function()
+    local place=loadStation("unload")
+    if not place then return unloadAtBase() end
+    if not s.baseGps then
+        error("Station unload configurada, mas esta tarefa nao possui GPS da base.",0)
+    end
+    if emptySlots()==16 then return end
+
+    local base={x=coord(s.baseGps.x),y=coord(s.baseGps.y),z=coord(s.baseGps.z)}
+    local goals=fuelStandTargets(place)
+    s.pending="unload-trip"
+    save()
+    routeInfo.state="INDO AO UNLOAD"
+    routeInfo.replans=0
+    routeInfo.remaining=nil
+    sendTelemetry()
+
+    local nav,err=calibrateRawHeading()
+    if not nav then
+        s.pending=nil
+        save()
+        error(err,0)
+    end
+
+    local blocked={ [posKey({x=coord(place.x),y=coord(place.y),z=coord(place.z)})]=true }
+    local ok,target=navigateAStar(nav,goals,blocked)
+    if not ok then
+        local retreat=navigateAStar(nav,{base},blocked)
+        if retreat then
+            nav.heading=turnRaw(nav.heading,nav.originalHeading)
+            s.pending=nil
+            save()
+        end
+        error("Nao encontrei rota livre ate station unload: "..tostring(target),0)
+    end
+
+    nav.heading=turnRaw(nav.heading,target.face)
+    while true do
+        chest()
+        for i=1,16 do
+            if turtle.getItemCount(i)>0 then
+                turtle.select(i)
+                chest()
+                turtle.drop()
+            end
+        end
+        if emptySlots()==16 then break end
+        waitFor("Inventario da station unload cheio. Libere espaco...")
+    end
+    turtle.select(1)
+
+    routeInfo.state="VOLTANDO A ORIGEM"
+    s.returnReason="VOLTANDO A ORIGEM"
+    sendTelemetry()
+    ok,target=navigateAStar(nav,{base},blocked)
+    if not ok then error("Nao encontrei rota de volta da station unload: "..tostring(target),0) end
+
+    local confirmed=gpsPoint(2)
+    if not confirmed or confirmed.x~=base.x or confirmed.y~=base.y or confirmed.z~=base.z then
+        error("Retorno do unload nao confirmou a origem.",0)
+    end
+    nav.heading=turnRaw(nav.heading,nav.originalHeading)
+    routeInfo.state=nil
+    routeInfo.remaining=nil
+    routeInfo.replans=0
+    s.returnReason=nil
+    s.pending=nil
+    save()
+    print("Descarga concluida; turtle novamente na origem.")
+end
+
 local function run()
     while s.mode ~= "done" do
         remoteGate()
@@ -932,7 +1023,7 @@ local function run()
             s.mode = "dock"
             save()
         elseif s.mode == "dock" then
-            unload()
+            unloadAtConfiguredStation()
             if s.cursor == s.width * s.length then
                 print("Camada " .. s.layer .. " finalizada.")
                 if s.layer == s.depth then

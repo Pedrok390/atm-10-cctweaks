@@ -11,6 +11,10 @@ if command == "help" then
     print("dev mine           - Configura a mineracao")
     print("dev mine help      - Ajuda da mining turtle")
     print("dev dashboard      - Painel 4x4 das turtles")
+    print("dev station list   - Lista stations")
+    print("dev station set <nome> x y z")
+    print("dev station show <nome>")
+    print("dev station clear <nome>")
     print("dev fuel set x y z - Define o bau de combustivel")
     print("dev fuel show      - Mostra o bau configurado")
     print("dev fuel clear     - Remove o bau configurado")
@@ -23,13 +27,17 @@ elseif command == "status" then
     print("Nome: " .. (os.getComputerLabel() or "sem nome"))
     print("Sistema: " .. os.version())
     print("HTTP: " .. ((http and http.get) and "disponivel" or "desativado"))
-    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua", "/dev/bin/fuel.lua", "/dev/bin/dashboard.lua" }) do
+    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua", "/dev/bin/fuel.lua", "/dev/bin/station.lua", "/dev/bin/dashboard.lua" }) do
         print(((fs.exists(path) and not fs.isDir(path)) and "[OK] " or "[AUSENTE] ") .. path)
     end
     print("Peripherals: " .. #peripheral.getNames())
 elseif command == "inspect" then
     if not shell.execute("/dev/bin/inspect.lua", table.unpack(args, 2)) then
         error("Falha na inspecao. Confira o nome ou execute dev update.", 0)
+    end
+elseif command == "station" then
+    if not shell.execute("/dev/bin/station.lua", table.unpack(args, 2)) then
+        error("Falha na configuracao de station.", 0)
     end
 elseif command == "fuel" then
     if not shell.execute("/dev/bin/fuel.lua", table.unpack(args, 2)) then

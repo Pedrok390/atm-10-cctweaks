@@ -1,6 +1,7 @@
 local args={...}
 local PATH="/dev/fuel-place"
 local MAP="/dev/fuel-map"
+local STATIONS="/dev/stations"
 
 local function save(t)
   fs.makeDir("/dev")
@@ -10,7 +11,27 @@ local function save(t)
   h.close()
 end
 
+local function loadStations()
+  if not fs.exists(STATIONS) then return {version=1,stations={}} end
+  local h=fs.open(STATIONS,"r")
+  if not h then return {version=1,stations={}} end
+  local raw=h.readAll(); h.close()
+  local ok,t=pcall(textutils.unserialize,raw or "")
+  if not ok or type(t)~="table" then return {version=1,stations={}} end
+  if type(t.stations)~="table" then t.stations={} end
+  return t
+end
+
+local function saveStations(t)
+  fs.makeDir("/dev")
+  local h,err=fs.open(STATIONS,"w")
+  if not h then error("Nao foi possivel salvar stations: "..tostring(err),0) end
+  h.write(textutils.serialize(t)); h.close()
+end
+
 local function loadCfg()
+  local stations=loadStations()
+  if stations.stations.fuel then return stations.stations.fuel end
   if not fs.exists(PATH) then return nil end
   local h=fs.open(PATH,"r")
   if not h then return nil end
@@ -27,6 +48,9 @@ if cmd=="set" then
   if not x or not y or not z or args[5] then
     error("Uso: dev fuel set <x> <y> <z>",0)
   end
+  local stations=loadStations()
+  stations.stations.fuel={x=x,y=y,z=z}
+  saveStations(stations)
   save({version=1,x=x,y=y,z=z})
   if fs.exists(MAP) then fs.delete(MAP) end
   print(string.format("Bau de combustivel salvo em: %.1f, %.1f, %.1f",x,y,z))
@@ -41,8 +65,11 @@ elseif cmd=="show" then
   end
 elseif cmd=="clear" then
   if fs.exists(PATH) then fs.delete(PATH) end
+  local stations=loadStations()
+  stations.stations.fuel=nil
+  saveStations(stations)
   if fs.exists(MAP) then fs.delete(MAP) end
-  print("Configuracao do bau de combustivel e mapa removidos.")
+  print("Station fuel, configuracao antiga e mapa removidos.")
 elseif cmd=="map" and args[2]=="clear" and not args[3] then
   if fs.exists(MAP) then fs.delete(MAP) end
   print("Mapa aprendido da rota de combustivel apagado.")
