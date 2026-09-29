@@ -583,11 +583,18 @@ local function refuelFromFront(needed)
             end
         end
 
-        -- A lava bucket leaves minecraft:bucket in the selected slot.
-        -- Rejected items and containers go back to this same fuel chest.
+        -- Rejected items and return containers must go back to this same fuel chest.
         if turtle.getItemCount(16) > 0 then
             chest()
-            turtle.drop()
+            local detail = turtle.getItemDetail(16)
+            local returned = turtle.drop()
+            if not returned or turtle.getItemCount(16) > 0 then
+                local item = detail and detail.name or "item desconhecido"
+                error("Nao consegui devolver "..item.." para a station fuel. Libere espaco no Ender Chest e use resume.", 0)
+            end
+            if detail and detail.name == "minecraft:bucket" then
+                print("Balde vazio devolvido para a station fuel.")
+            end
         end
 
         if not usable then
