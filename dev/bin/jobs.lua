@@ -82,8 +82,9 @@ end
 local function listJobs(t)
   if #t.jobs==0 then print("Nenhum job salvo.") return end
   for _,j in ipairs(t.jobs) do
-    print(string.format("#%s %-14s %sx%sx%s turtle=%s estado=%s",
-      j.id,j.name,j.width,j.length,j.depth,j.turtleId or "-",j.state or "CRIADO"))
+    local start=j.start and (j.start.x..","..j.start.y..","..j.start.z) or "sem-coord"
+    print(string.format("#%s %-10s %-12s %sx%sx%s inicio=%s turtle=%s estado=%s",
+      j.id,j.type or "mine",j.name,j.width,j.length,j.depth,start,j.turtleId or "-",j.state or "CRIADO"))
   end
 end
 
@@ -96,11 +97,16 @@ end
 
 local function startJob(t,j)
   if not j.turtleId then error("Job sem turtle. Use dev jobs assign <job> <id>.",0) end
+  if (j.type or "mine")~="mine" then error("Tipo de job ainda nao suportado.",0) end
+  if type(j.start)~="table" or tonumber(j.start.x)==nil or tonumber(j.start.y)==nil or tonumber(j.start.z)==nil then
+    error("Job antigo sem coordenada inicial. Recrie com: dev jobs create mine <nome> <w> <l> <d> <x> <y> <z> [minFuel]",0)
+  end
   local req=tostring(os.getComputerID())..":"..tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
   local msg={
     type="job_command",command="start",target=j.turtleId,requestId=req,
     jobId=tostring(j.id),jobName=j.name,width=j.width,length=j.length,
     depth=j.depth,minimum=j.minimum,
+    startX=j.start.x,startY=j.start.y,startZ=j.start.z,
   }
   if not rednet.send(j.turtleId,msg,JOB_PROTOCOL) then error("Nao consegui enviar o job para a turtle.",0) end
   print("Job enviado. Aguardando a turtle realmente iniciar...")
@@ -133,19 +139,24 @@ local function startJob(t,j)
   end
 end
 
-local function createJob(t,name,w,l,d,m)
+local function createJob(t,kind,name,w,l,d,x,y,z,m)
+  if kind~="mine" then error("Tipo suportado agora: mine",0) end
   if not name or name=="" or name:find("%s") then error("Nome do job deve ser uma palavra.",0) end
   if findJob(t,name) then error("Ja existe job com esse nome.",0) end
   w,l,d=integer(w,1,256),integer(l,1,256),integer(d,1,512)
+  x,y,z=tonumber(x),tonumber(y),tonumber(z)
   m=integer(m or 500,1,1000000000)
-  if not w or not l or not d or not m then
-    error("Uso: dev jobs create <nome> <largura> <comprimento> <profundidade> [minFuel]",0)
+  if not w or not l or not d or x==nil or y==nil or z==nil or not m then
+    error("Uso: dev jobs create mine <nome> <largura> <comprimento> <profundidade> <x> <y> <z> [minFuel]",0)
   end
-  local j={id=t.nextId,name=name,width=w,length=l,depth=d,minimum=m,state="CRIADO"}
+  local j={
+    id=t.nextId,type="mine",name=name,width=w,length=l,depth=d,minimum=m,state="CRIADO",
+    start={x=x,y=y,z=z},
+  }
   t.nextId=t.nextId+1
   t.jobs[#t.jobs+1]=j
   saveJobs(t)
-  print("Job criado: #"..j.id.." "..j.name)
+  print("Job criado: #"..j.id.." "..j.name.." inicio="..x..","..y..","..z)
 end
 
 local function menu(t)
@@ -170,12 +181,16 @@ local function menu(t)
     elseif op=="1" then
       printTurtles(discover(3)); print("Enter..."); read()
     elseif op=="2" then
+      print("Tipo: mine")
       write("Nome: "); local name=read()
       write("Largura: "); local w=read()
       write("Comprimento: "); local l=read()
       write("Profundidade: "); local d=read()
+      write("Inicio GPS X: "); local x=read()
+      write("Inicio GPS Y: "); local y=read()
+      write("Inicio GPS Z: "); local z=read()
       write("Min fuel [500]: "); local m=read(); if m=="" then m=500 end
-      local ok,err=pcall(createJob,t,name,w,l,d,m); if not ok then printError(err); sleep(2) end
+      local ok,err=pcall(createJob,t,"mine",name,w,l,d,x,y,z,m); if not ok then printError(err); sleep(2) end
     elseif op=="3" then
       write("Job nome/id: "); local key=read()
       local j=findJob(t,key)
@@ -204,7 +219,7 @@ local cmd=args[1]
 if not cmd then menu(t)
 elseif cmd=="list" then listJobs(t)
 elseif cmd=="discover" then printTurtles(discover(args[2] or 3))
-elseif cmd=="create" then createJob(t,args[2],args[3],args[4],args[5],args[6])
+elseif cmd=="create" then createJob(t,args[2],args[3],args[4],args[5],args[6],args[7],args[8],args[9],args[10])
 elseif cmd=="assign" then
   local j=findJob(t,args[2]); local id=tonumber(args[3])
   if not j or not id then error("Uso: dev jobs assign <job> <turtleId>",0) end
