@@ -326,3 +326,20 @@ selecionar uma turtle, `R` para redescobrir agents e `Q` para sair.
 
 O agent também mantém o estado OCUPADA durante a execução de jobs transport, para
 que o dashboard e o job manager não tratem uma turtle em transporte como livre.
+
+
+### Centro de controle da frota
+
+O `dev fleet` continua sendo o dashboard de monitoramento. Com uma turtle
+selecionada:
+
+- `J`: escolhe um job salvo, atribui a turtle selecionada e inicia.
+- `P`: pausa/retoma uma mineração.
+- `H`: manda a mineração voltar para a base.
+- `C`: cancela uma mineração.
+- `R`: redescobre agents.
+- `Q`: fecha o dashboard.
+
+Os controles de mineração não são enviados para jobs `transport`; cancelamento
+seguro de transporte será tratado separadamente para não abandonar carga no meio
+da rota.
