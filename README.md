@@ -245,3 +245,28 @@ A coordenada informada representa a posicao da propria turtle na origem da miner
 Antes de iniciar, ela navega ate esse ponto sem quebrar blocos, confirma o GPS e so
 entao registra esse local como `baseGps` e inicia a quarry. A orientacao da turtle
 antes da viagem e preservada e passa a ser a direcao "frente" da area.
+
+
+### Stations remotas
+
+Um Pocket/PC com wireless modem pode configurar stations nas turtles sem acesso
+direto ao terminal delas:
+
+```text
+dev station remote <turtleId> set fuel <x> <y> <z>
+dev station remote <turtleId> set unload <x> <y> <z>
+dev station remote <turtleId> show fuel
+dev station remote <turtleId> list
+dev station remote <turtleId> clear fuel
+```
+
+Para aplicar em todas as turtles com agent online:
+
+```text
+dev station broadcast set fuel <x> <y> <z>
+dev station broadcast set unload <x> <y> <z>
+dev station broadcast list
+```
+
+Cada turtle responde com confirmação. Alterar ou remover `fuel` também invalida o
+mapa persistente antigo da rota de combustível.
