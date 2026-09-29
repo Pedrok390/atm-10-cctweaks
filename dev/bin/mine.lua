@@ -8,6 +8,7 @@ local FUEL_MAP = "/dev/fuel-map"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local COMMAND_PROTOCOL = "atm10:mine:command"
+local JOB_STATUS_PROTOCOL = "atm10:job:status"
 local s
 local save
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
@@ -1204,7 +1205,22 @@ local function prompt(label, default, maximum)
     end
 end
 
-local function main()
+local function local okMain, errMain = pcall(main)
+if not okMain then
+    if args[1] == "job-start" and args[8] then
+        local modem = wirelessModem()
+        if modem and rednet then
+            if not rednet.isOpen(modem) then rednet.open(modem) end
+            rednet.broadcast({
+                type = "job_run_result",
+                state = "ERRO",
+                requestId = args[8],
+                error = tostring(errMain),
+            }, JOB_STATUS_PROTOCOL)
+        end
+    end
+    error(errMain, 0)
+end
     if args[1] == "help" then help(); return end
     if not turtle then error("Este programa precisa ser executado na mining turtle.", 0) end
     s = loadState()
@@ -1274,7 +1290,7 @@ local function main()
         depth, minimum = integer(args[4], 1, 512), integer(args[5] or 500, 1, 1e9)
         if remoteJob then
             jobId, jobName = args[6], args[7]
-            if not jobId or jobId == "" or not jobName or jobName == "" or #args > 7 then
+            if not jobId or jobId == "" or not jobName or jobName == "" or #args > 8 then
                 error("Job remoto invalido.",0)
             end
         elseif #args > 5 then
