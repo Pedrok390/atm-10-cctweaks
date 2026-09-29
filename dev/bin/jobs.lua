@@ -2,6 +2,7 @@ local args={...}
 local JOB_PROTOCOL="atm10:job:command"
 local STATUS_PROTOCOL="atm10:job:status"
 local MINE_COMMAND="atm10:mine:command"
+local TELEMETRY_PROTOCOL="atm10:mine:telemetry"
 local PATH="/dev/jobs"
 
 local function openWireless()
@@ -102,23 +103,34 @@ local function startJob(t,j)
     depth=j.depth,minimum=j.minimum,
   }
   if not rednet.send(j.turtleId,msg,JOB_PROTOCOL) then error("Nao consegui enviar o job para a turtle.",0) end
-  print("Job enviado. Aguardando confirmacao...")
-  local deadline=os.clock()+5
+  print("Job enviado. Aguardando a turtle realmente iniciar...")
+  local deadline=os.clock()+10
+  local accepted=false
   while os.clock()<deadline do
-    local _,reply=rednet.receive(STATUS_PROTOCOL,0.5)
-    if type(reply)=="table" and reply.requestId==req then
+    local sender,reply,protocol=rednet.receive(nil,0.5)
+    if protocol==STATUS_PROTOCOL and type(reply)=="table" and reply.requestId==req then
       if reply.state=="INICIANDO" then
+        accepted=true
         j.state="INICIANDO"; saveJobs(t)
-        print("Turtle aceitou o job.")
-        return
+        print("Turtle aceitou; aguardando telemetria da mineracao...")
       elseif reply.state=="OCUPADA" or reply.state=="ERRO" then
         j.state=reply.state; saveJobs(t)
-        error("Turtle recusou: "..tostring(reply.error or reply.state),0)
+        error("Turtle nao iniciou: "..tostring(reply.error or reply.state),0)
       end
+    elseif protocol==TELEMETRY_PROTOCOL and sender==j.turtleId and type(reply)=="table"
+      and tostring(reply.jobId or "")==tostring(j.id) then
+      j.state="MINERANDO"; saveJobs(t)
+      print("Job iniciado de verdade. Telemetria recebida da turtle.")
+      return
     end
   end
-  j.state="ENVIADO"; saveJobs(t)
-  print("Sem confirmacao em 5s; job ficou como ENVIADO.")
+  j.state=accepted and "INICIANDO" or "ENVIADO"
+  saveJobs(t)
+  if accepted then
+    print("Turtle aceitou, mas nao enviou telemetria em 10s. Verifique dev mine status nela.")
+  else
+    print("Sem confirmacao em 10s; job ficou como ENVIADO.")
+  end
 end
 
 local function createJob(t,name,w,l,d,m)
