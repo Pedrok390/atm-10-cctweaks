@@ -1205,22 +1205,7 @@ local function prompt(label, default, maximum)
     end
 end
 
-local function local okMain, errMain = pcall(main)
-if not okMain then
-    if args[1] == "job-start" and args[8] then
-        local modem = wirelessModem()
-        if modem and rednet then
-            if not rednet.isOpen(modem) then rednet.open(modem) end
-            rednet.broadcast({
-                type = "job_run_result",
-                state = "ERRO",
-                requestId = args[8],
-                error = tostring(errMain),
-            }, JOB_STATUS_PROTOCOL)
-        end
-    end
-    error(errMain, 0)
-end
+local function main()
     if args[1] == "help" then help(); return end
     if not turtle then error("Este programa precisa ser executado na mining turtle.", 0) end
     s = loadState()
@@ -1368,4 +1353,19 @@ end
     runControlled()
 end
 
-main()
+local okMain, errMain = pcall(main)
+if not okMain then
+    if args[1] == "job-start" and args[8] then
+        local modem = wirelessModem()
+        if modem and rednet then
+            if not rednet.isOpen(modem) then rednet.open(modem) end
+            rednet.broadcast({
+                type = "job_run_result",
+                state = "ERRO",
+                requestId = args[8],
+                error = tostring(errMain),
+            }, JOB_STATUS_PROTOCOL)
+        end
+    end
+    error(errMain, 0)
+end
