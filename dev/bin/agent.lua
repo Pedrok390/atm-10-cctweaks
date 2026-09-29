@@ -17,11 +17,28 @@ local function openWireless()
   error("Wireless modem nao encontrado.",0)
 end
 
-local function hasActiveMine()
+local function latestMineState()
+  local best
   for _,suffix in ipairs({".a",".b"}) do
-    if fs.exists("/dev/mine-state"..suffix) then return true end
+    local path="/dev/mine-state"..suffix
+    if fs.exists(path) then
+      local h=fs.open(path,"r")
+      if h then
+        local raw=h.readAll(); h.close()
+        local ok,t=pcall(textutils.unserialize,raw or "")
+        if ok and type(t)=="table" and tonumber(t.serial)
+          and (not best or tonumber(t.serial)>tonumber(best.serial or -1)) then
+          best=t
+        end
+      end
+    end
   end
-  return false
+  return best
+end
+
+local function hasActiveMine()
+  local state=latestMineState()
+  return state~=nil and state.mode~="done"
 end
 
 local function announce(state,extra)
