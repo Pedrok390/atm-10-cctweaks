@@ -94,6 +94,7 @@ local function draw()
 
   local t=data[selected]
   at(x,3,tostring(t.label or selected),colors.yellow)
+  if t.jobName then at(x,4,"Job: "..tostring(t.jobName),colors.cyan) end
   at(x,5,"Modo:",colors.lightGray)
   local state=t.controlState or (t.paused and "PAUSADO") or (t.baseHold and "NA BASE") or (modes[t.mode] or t.mode or "?")
   local stateColor=(state=="RETORNANDO" or state=="CANCELANDO") and colors.orange

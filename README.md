@@ -200,3 +200,28 @@ dev station set unload <x> <y> <z>
 
 Nao existe mais fallback para bau local na origem. Como as viagens usam GPS,
 uma nova tarefa tambem exige sinal GPS valido na origem.
+
+
+## Pocket job manager
+
+Um Advanced Wireless Pocket Computer pode criar e iniciar jobs diretamente nas
+turtles via rednet, sem computador central obrigatorio.
+
+```text
+dev jobs
+dev jobs discover
+dev jobs create mina1 32 32 40 500
+dev jobs assign mina1 <turtleId>
+dev jobs start mina1
+dev jobs pause <turtleId>
+dev jobs resume <turtleId>
+dev jobs home <turtleId>
+dev jobs cancel <turtleId>
+```
+
+Os jobs ficam salvos em `/dev/jobs` no Pocket/PC. Turtles avancadas tentam
+iniciar `/dev/bin/agent.lua` em uma aba de background no startup; se isso nao
+for suportado pelo computador, rode `dev agent` manualmente. O agent anuncia
+estado pelo protocolo `atm10:job:status` e recebe novos jobs por
+`atm10:job:command`. Durante a mineracao, pause/base/cancel continuam usando
+o protocolo existente de comandos da mineradora.

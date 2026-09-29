@@ -4,6 +4,14 @@ local ok, err = pcall(function()
     if fs.exists("/dev/dev.lua") and not fs.isDir("/dev/dev.lua") then
         shell.setAlias("dev", "/dev/dev.lua")
         print("[DevKit] Pronto. Digite dev help.")
+        if turtle and fs.exists("/dev/bin/agent.lua") and shell.openTab then
+            local launched, tab = pcall(shell.openTab, "/dev/bin/agent.lua")
+            if launched and tab then
+                print("[DevKit] Job agent ativo em background.")
+            else
+                print("[DevKit] Agent nao iniciou em background; use dev agent.")
+            end
+        end
     else
         printError("[DevKit] Arquivos ausentes. Execute o instalador novamente.")
     end
