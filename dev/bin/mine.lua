@@ -152,6 +152,8 @@ local function sendTelemetry()
         type = "mine_status",
         id = os.getComputerID(),
         label = os.getComputerLabel() or ("Turtle " .. os.getComputerID()),
+        jobId = s.jobId,
+        jobName = s.jobName,
         fuel = level,
         fuelLimit = turtle.getFuelLimit(),
         mode = s.mode,
@@ -1263,13 +1265,22 @@ local function main()
         runControlled()
         return
     end
-    if args[1] and args[1] ~= "start" then help(); return end
+    local remoteJob = args[1] == "job-start"
+    if args[1] and args[1] ~= "start" and not remoteJob then help(); return end
     if s and s.mode ~= "done" then error("Ja existe uma tarefa. Use dev mine resume ou status.", 0) end
-    local width, length, depth, minimum
-    if args[1] == "start" then
+    local width, length, depth, minimum, jobId, jobName
+    if args[1] == "start" or remoteJob then
         width, length = integer(args[2], 1, 256), integer(args[3], 1, 256)
         depth, minimum = integer(args[4], 1, 512), integer(args[5] or 500, 1, 1e9)
-        if not width or not length or not depth or not minimum or #args > 5 then help(); error("Dimensoes ou minimo invalidos.", 0) end
+        if remoteJob then
+            jobId, jobName = args[6], args[7]
+            if not jobId or jobId == "" or not jobName or jobName == "" or #args > 7 then
+                error("Job remoto invalido.",0)
+            end
+        elseif #args > 5 then
+            help(); error("Dimensoes ou minimo invalidos.",0)
+        end
+        if not width or not length or not depth or not minimum then help(); error("Dimensoes ou minimo invalidos.", 0) end
     else
         help()
         width = prompt("Largura (direita)", 3, 256)
@@ -1283,8 +1294,12 @@ local function main()
     if type(limit) == "number" and needed > limit then error("Minimo/reserva excede a capacidade de " .. limit .. ". Reduza os valores.", 0) end
     print("Area " .. width .. "x" .. length .. "; " .. depth .. " camadas ABAIXO; reserva: " .. needed)
     print("Stations fuel/unload configuradas. Nao mova a turtle durante a tarefa.")
-    write("Digite MINERAR para iniciar: ")
-    if read() ~= "MINERAR" then print("Cancelado."); return end
+    if remoteJob then
+        print("Job remoto recebido: "..tostring(jobName).." ("..tostring(jobId)..")")
+    else
+        write("Digite MINERAR para iniciar: ")
+        if read() ~= "MINERAR" then print("Cancelado."); return end
+    end
     local baseGps = locateGps(2)
     if baseGps then
         print(string.format("Base GPS registrada: %.1f, %.1f, %.1f", baseGps.x, baseGps.y, baseGps.z))
@@ -1293,7 +1308,7 @@ local function main()
     end
     s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
         minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0,
-        baseGps=baseGps }
+        baseGps=baseGps, jobId=jobId, jobName=jobName }
     save()
     runControlled()
 end
