@@ -74,7 +74,8 @@ elseif command == "dashboard" then
 elseif command == "update" then
     if not http or not http.get then error("HTTP desativado na configuracao do CC:Tweaked.", 0) end
     print("Buscando instalador atualizado...")
-    local response, err, failed = http.get(BASE .. "install.lua")
+    local nonce = tostring(os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000))
+    local response, err, failed = http.get(BASE .. "install.lua?cb=" .. nonce)
     if not response then
         if failed then failed.close() end
         error("Falha na atualizacao: " .. tostring(err), 0)

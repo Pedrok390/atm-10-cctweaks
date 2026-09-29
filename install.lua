@@ -35,7 +35,8 @@ local function install()
         if fs.isDir(path) or fs.isReadOnly(path) then error("Destino indisponivel: " .. path, 0) end
         if fs.exists(path) then previous[name] = read(path) end
         print("Baixando " .. name .. "...")
-        local response, err, failed = http.get(BASE .. name)
+        local nonce = tostring(os.epoch and os.epoch("utc") or math.floor(os.clock() * 1000))
+        local response, err, failed = http.get(BASE .. name .. "?cb=" .. nonce)
         if not response then
             if failed then failed.close() end
             error("Falha no download: " .. tostring(err), 0)
