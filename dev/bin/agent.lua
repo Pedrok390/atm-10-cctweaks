@@ -72,7 +72,7 @@ local function executeJob(msg)
     return true
   end
   announce("INICIANDO",{requestId=msg.requestId,jobId=msg.jobId,jobName=msg.jobName})
-  local ok=shell.execute("/dev/bin/mine.lua","job-start",tostring(w),tostring(l),tostring(d),tostring(m),tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "job"))
+  local ok=shell.execute("/dev/bin/mine.lua","job-start",tostring(w),tostring(l),tostring(d),tostring(m),tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "job"),tostring(msg.requestId or ""))
   if ok then announce("LIVRE",{requestId=msg.requestId,lastJobId=msg.jobId})
   else announce("ERRO",{requestId=msg.requestId,jobId=msg.jobId,error="mine.lua terminou com erro"}) end
   return true
