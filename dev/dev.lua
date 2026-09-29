@@ -65,6 +65,8 @@ elseif command == "watchdog" then
     if not shell.execute("/dev/bin/watchdog.lua", table.unpack(args, 2)) then
         error("Falha no watchdog.",0)
     end
+elseif command == "watchdog" then
+    shell.execute("/dev/bin/watchdog.lua", table.unpack(args, 2))
 elseif command == "jobs" then
     if not shell.execute("/dev/bin/jobs.lua", table.unpack(args, 2)) then
         error("Falha no job manager.",0)
