@@ -95,7 +95,17 @@ local function render()
   term.setTextColor(colors.white)
   term.clear()
   local w,h=term.getSize()
-  put(1,1,"FROTA ATM10  turtles:"..#sorted())
+  local queued=0
+  if fs.exists("/dev/jobs") then
+    local fh=fs.open("/dev/jobs","r")
+    if fh then
+      local ok,data=pcall(textutils.unserialize,fh.readAll() or ""); fh.close()
+      if ok and type(data)=="table" and type(data.jobs)=="table" then
+        for _,j in ipairs(data.jobs) do if j.state=="FILA" or j.state=="DESPACHANDO" then queued=queued+1 end end
+      end
+    end
+  end
+  put(1,1,"FROTA ATM10 turtles:"..#sorted().." fila:"..queued)
   put(1,2,string.rep("-",w))
 
   local list=sorted()
