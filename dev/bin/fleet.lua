@@ -145,7 +145,7 @@ local function render()
   if notice~="" and os.clock()-noticeAt<5 then
     put(1,h,trim(notice,w))
   else
-    put(1,h,"UP/DOWN | J job | P pausa | H base | C canc | R")
+    put(1,h,"UP/DOWN J job P pausa H base C canc K chunks R")
   end
 end
 
@@ -283,6 +283,22 @@ local function inputLoop()
     elseif key==keys.r then
       rednet.broadcast({type="job_command",command="discover"},JOB_PROTOCOL)
       setNotice("Descoberta enviada.")
+    elseif key==keys.k then
+      local t=selectedTurtle()
+      if t then
+        local jobName=(t.mine and t.mine.jobName) or (t.transport and t.transport.jobName)
+        if jobName then
+          term.clear()
+          shell.run("/dev/bin/chunks.lua","job",tostring(jobName))
+          print("")
+          print("Pressione qualquer tecla para voltar.")
+          os.pullEvent("key")
+        else
+          setNotice("Turtle selecionada sem job conhecido.")
+        end
+      else
+        setNotice("Selecione uma turtle.")
+      end
     elseif key==keys.j then
       local t=selectedTurtle()
       if t then chooseJob(t.id) else setNotice("Selecione uma turtle.") end
