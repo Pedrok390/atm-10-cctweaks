@@ -12,10 +12,12 @@ local s
 local save
 local telemetry = { modem = nil, lastGps = -math.huge, gx = nil, gy = nil, gz = nil }
 local routeInfo = { state=nil, replans=0, remaining=nil, known=0 }
-local TRASH_ITEMS = {
+local TRASH_PATH = "/dev/trash-list"
+local DEFAULT_TRASH = {
     ["minecraft:cobblestone"] = true,
     ["minecraft:dirt"] = true,
 }
+local trashCache
 local returningHome = false
 
 local function wirelessModem()
@@ -336,13 +338,36 @@ local function emptySlots()
     return n
 end
 
+local function loadTrashItems()
+    if trashCache then return trashCache end
+    local items = {}
+    for name, enabled in pairs(DEFAULT_TRASH) do if enabled then items[name] = true end end
+
+    if fs.exists(TRASH_PATH) then
+        local h = fs.open(TRASH_PATH, "r")
+        if h then
+            local raw = h.readAll()
+            h.close()
+            local ok, t = pcall(textutils.unserialize, raw or "")
+            if ok and type(t) == "table" and type(t.items) == "table" then
+                items = {}
+                for name, enabled in pairs(t.items) do
+                    if enabled then items[name] = true end
+                end
+            end
+        end
+    end
+    trashCache = items
+    return items
+end
+
 local function discardTrash()
     local previous = turtle.getSelectedSlot()
     local discarded = 0
     for i = 1, 16 do
         if turtle.getItemCount(i) > 0 then
             local detail = turtle.getItemDetail(i)
-            if detail and TRASH_ITEMS[detail.name] then
+            if detail and loadTrashItems()[detail.name] then
                 turtle.select(i)
                 local count = turtle.getItemCount(i)
                 if turtle.dropDown() then discarded = discarded + count end
