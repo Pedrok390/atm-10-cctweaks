@@ -2,7 +2,7 @@
 local BASE = "https://raw.githubusercontent.com/Pedrok390/atm-10-cctweaks/main/"
 local MARKER = "-- ATM10 DevKit startup v1"
 local BACKUP = "/startup.devkit-backup.lua"
-local files = { "dev/dev.lua", "dev/bin/inspect.lua", "dev/bin/mine.lua", "dev/bin/dashboard.lua", "dev/bin/fuel.lua", "dev/bin/station.lua", "dev/bin/trash.lua", "dev/bin/jobs.lua", "dev/bin/agent.lua", "install.lua", "startup.lua" }
+local files = { "dev/dev.lua", "dev/bin/inspect.lua", "dev/bin/mine.lua", "dev/bin/dashboard.lua", "dev/bin/fuel.lua", "dev/bin/station.lua", "dev/bin/trash.lua", "dev/bin/transport.lua", "dev/bin/jobs.lua", "dev/bin/agent.lua", "install.lua", "startup.lua" }
 
 local function read(path)
     local h, err = fs.open(path, "r")

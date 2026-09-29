@@ -270,3 +270,27 @@ dev station broadcast list
 
 Cada turtle responde com confirmação. Alterar ou remover `fuel` também invalida o
 mapa persistente antigo da rota de combustível.
+
+
+## Jobs de transporte
+
+O Pocket pode criar um job para mover itens entre duas stations configuradas na
+turtle:
+
+```text
+dev jobs create transport <nome> <station-origem> <station-destino>
+dev jobs assign <nome> <turtleId>
+dev jobs start <nome>
+```
+
+Exemplo:
+
+```text
+dev jobs create transport lava fuel unload
+dev jobs assign lava 7
+dev jobs start lava
+```
+
+A turtle exige inventario vazio, calibra a orientacao com GPS, navega sem quebrar
+blocos ate uma posicao adjacente a origem, coleta os itens que couberem, segue ate
+o destino e descarrega tudo. O job e de uma unica viagem nesta primeira versao.
