@@ -662,12 +662,26 @@ local NEIGHBORS = {
 local function heuristic(p, goals)
     local best
     for _, g in ipairs(goals) do
-        local dy = math.abs(p.y-g.y)
-        local horizontal = math.abs(p.x-g.x) + math.abs(p.z-g.z)
-        -- Weighted Y bias: reaching the target height is preferred before
-        -- spending moves on X/Z, while still allowing horizontal detours.
-        local d = dy * 32 + horizontal
+        local d = manhattan(p, g)
         if not best or d < best then best = d end
+    end
+    return best or 0
+end
+
+local function verticalTie(p, goals)
+    local best
+    for _, g in ipairs(goals) do
+        local dy = math.abs(p.y - g.y)
+        if best == nil or dy < best then best = dy end
+    end
+    return best or 0
+end
+
+local function horizontalTie(p, goals)
+    local best
+    for _, g in ipairs(goals) do
+        local d = math.abs(p.x - g.x) + math.abs(p.z - g.z)
+        if best == nil or d < best then best = d end
     end
     return best or 0
 end
@@ -699,6 +713,8 @@ local function aStar(start, goals, blocked, margin)
     local nodes = { [startKey]=copyPos(start) }
     local came, gScore = {}, { [startKey]=0 }
     local fScore = { [startKey]=heuristic(start,goals) }
+    local yTie = { [startKey]=verticalTie(start,goals) }
+    local horizontalTieScore = { [startKey]=horizontalTie(start,goals) }
 
     local expansions, comparisons = 0, 0
     while #open > 0 do
@@ -709,7 +725,13 @@ local function aStar(start, goals, blocked, margin)
         for i=2,#open do
             comparisons = comparisons + 1
             if comparisons % 256 == 0 then sleep(0) end
-            if (fScore[open[i]] or math.huge) < (fScore[open[bestIndex]] or math.huge) then
+            local candidate, currentBest = open[i], open[bestIndex]
+            local cf, bf = fScore[candidate] or math.huge, fScore[currentBest] or math.huge
+            local cy, by = yTie[candidate] or math.huge, yTie[currentBest] or math.huge
+            local ch, bh = horizontalTieScore[candidate] or math.huge, horizontalTieScore[currentBest] or math.huge
+            if cf < bf
+                or (cf == bf and cy < by)
+                or (cf == bf and cy == by and ch < bh) then
                 bestIndex = i
             end
         end
@@ -733,6 +755,8 @@ local function aStar(start, goals, blocked, margin)
                         nodes[nk] = n
                         gScore[nk] = tentative
                         fScore[nk] = tentative + heuristic(n,goals)
+                        yTie[nk] = verticalTie(n,goals)
+                        horizontalTieScore[nk] = horizontalTie(n,goals)
                         if not inOpen[nk] then
                             open[#open+1] = nk
                             inOpen[nk] = true
