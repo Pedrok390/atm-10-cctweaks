@@ -225,3 +225,23 @@ for suportado pelo computador, rode `dev agent` manualmente. O agent anuncia
 estado pelo protocolo `atm10:job:status` e recebe novos jobs por
 `atm10:job:command`. Durante a mineracao, pause/base/cancel continuam usando
 o protocolo existente de comandos da mineradora.
+
+
+### Job de mineracao com coordenada inicial GPS
+
+Jobs do tipo `mine` agora recebem a coordenada GPS onde a turtle deve iniciar a quarry:
+
+```text
+dev jobs create mine <nome> <largura> <comprimento> <profundidade> <x> <y> <z> [minFuel]
+```
+
+Exemplo:
+
+```text
+dev jobs create mine mina1 32 32 40 120 68 -350 500
+```
+
+A coordenada informada representa a posicao da propria turtle na origem da mineracao.
+Antes de iniciar, ela navega ate esse ponto sem quebrar blocos, confirma o GPS e so
+entao registra esse local como `baseGps` e inicia a quarry. A orientacao da turtle
+antes da viagem e preservada e passa a ser a direcao "frente" da area.
