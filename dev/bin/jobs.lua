@@ -3,6 +3,8 @@ local JOB_PROTOCOL="atm10:job:command"
 local STATUS_PROTOCOL="atm10:job:status"
 local MINE_COMMAND="atm10:mine:command"
 local CONTROL_ACK_PROTOCOL="atm10:mine:control:ack"
+local TRANSPORT_COMMAND="atm10:transport:command"
+local TRANSPORT_ACK="atm10:transport:control:ack"
 local TELEMETRY_PROTOCOL="atm10:mine:telemetry"
 local PATH="/dev/jobs"
 
@@ -131,6 +133,26 @@ local function sendMine(target,command)
   end
 
   print("Comando enviado sem confirmacao: "..command)
+end
+
+local function sendTransport(target,command)
+  target=tonumber(target)
+  if not target then error("ID da turtle invalido.",0) end
+  if command=="home" then error("Transport nao usa comando home.",0) end
+  local req=tostring(os.getComputerID())..":transport:"..command..":"..
+    tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
+  rednet.send(target,{
+    type="transport_command",target=target,command=command,requestId=req,
+  },TRANSPORT_COMMAND)
+  local deadline=os.clock()+2
+  while os.clock()<deadline do
+    local id,reply=rednet.receive(TRANSPORT_ACK,0.25)
+    if id==target and type(reply)=="table" and reply.requestId==req then
+      print("Transport confirmou comando: "..command)
+      return
+    end
+  end
+  error("Transport nao respondeu ao comando "..command..".",0)
 end
 
 local function startJob(t,j)
@@ -320,6 +342,12 @@ elseif cmd=="assign" then
 elseif cmd=="start" then
   local j=findJob(t,args[2]); if not j then error("Job nao encontrado.",0) end
   startJob(t,j)
+elseif cmd=="transport-control" then
+  local action=args[3]
+  if action~="pause" and action~="resume" and action~="cancel" then
+    error("Uso: dev jobs transport-control <turtleId> <pause|resume|cancel>",0)
+  end
+  sendTransport(args[2],action)
 elseif cmd=="pause" or cmd=="resume" or cmd=="home" or cmd=="cancel" then
   sendMine(args[2],cmd)
 else

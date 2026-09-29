@@ -1,7 +1,10 @@
 local args={...}
 local STATIONS="/dev/stations"
 local STATUS_PROTOCOL="atm10:job:status"
+local CONTROL_PROTOCOL="atm10:transport:command"
+local CONTROL_ACK_PROTOCOL="atm10:transport:control:ack"
 local MARGIN=32
+local control={paused=false,cancel=false}
 
 if not turtle then error("Este programa precisa ser executado em uma turtle.",0) end
 
@@ -33,6 +36,26 @@ local function wireless()
       if p and p.isWireless and p.isWireless() then
         if not rednet.isOpen(name) then rednet.open(name) end
         return name
+      end
+    end
+  end
+end
+
+local function controlListener()
+  wireless()
+  while true do
+    local sender,msg=rednet.receive(CONTROL_PROTOCOL)
+    if type(msg)=="table" and (not msg.target or msg.target==os.getComputerID()) then
+      local applied=false
+      if msg.command=="pause" then control.paused=true; applied=true
+      elseif msg.command=="resume" then control.paused=false; applied=true
+      elseif msg.command=="cancel" then control.cancel=true; control.paused=false; applied=true
+      end
+      if applied and msg.requestId then
+        rednet.send(sender,{
+          type="transport_control_ack",id=os.getComputerID(),
+          command=msg.command,requestId=msg.requestId,
+        },CONTROL_ACK_PROTOCOL)
       end
     end
   end
@@ -315,7 +338,27 @@ if fuel()<needed then error("Combustivel insuficiente para transport. Precisa de
 local delivered=0
 local trips=0
 
+local function waitBeforePickup()
+  while control.paused and not control.cancel do
+    report("PAUSADO",jobId,jobName,{
+      source=sourceName,destination=destName,item=itemFilter,
+      delivered=delivered,target=quantity,trips=trips,
+    })
+    sleep(0.5)
+  end
+  return not control.cancel
+end
+
+local function runTransport()
 while true do
+  if not waitBeforePickup() then
+    report("CANCELADO",jobId,jobName,{
+      source=sourceName,destination=destName,item=itemFilter,
+      delivered=delivered,target=quantity,trips=trips,
+    })
+    print("Transport cancelado com inventario vazio.")
+    return
+  end
   local remaining=quantity and (quantity-delivered) or nil
   if remaining and remaining<=0 then break end
 
@@ -355,6 +398,14 @@ while true do
     delivered=delivered,target=quantity,trips=trips,
   })
 
+  if control.cancel then
+    report("CANCELADO",jobId,jobName,{
+      source=sourceName,destination=destName,item=itemFilter,
+      delivered=delivered,target=quantity,trips=trips,
+    })
+    print("Transport cancelado apos entregar a carga atual.")
+    return
+  end
   if not itemFilter and not quantity then break end
 end
 
@@ -363,3 +414,6 @@ report("CONCLUIDO",jobId,jobName,{
   delivered=delivered,target=quantity,trips=trips,
 })
 print("Transport concluido: "..delivered.." itens em "..trips.." viagem(ns).")
+end
+
+parallel.waitForAny(runTransport,controlListener)

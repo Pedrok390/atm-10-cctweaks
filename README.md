@@ -343,3 +343,15 @@ selecionada:
 Os controles de mineração não são enviados para jobs `transport`; cancelamento
 seguro de transporte será tratado separadamente para não abandonar carga no meio
 da rota.
+
+
+### Pause e cancel seguro de transport
+
+No `dev fleet`, os mesmos atalhos agora controlam transport:
+
+- `P`: pausa/retoma. Se ja houver carga, a turtle entrega primeiro e pausa antes da proxima coleta.
+- `C`: cancela. Se ja houver carga, a turtle termina a entrega atual e encerra com inventario vazio.
+- `H`: continua reservado para mineracao; transport nao abandona a rota para voltar a base.
+
+O controle usa o protocolo `atm10:transport:command` e confirma o recebimento
+antes de o Pocket considerar o comando enviado.
