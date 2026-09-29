@@ -1284,14 +1284,17 @@ end
     local remoteJob = args[1] == "job-start"
     if args[1] and args[1] ~= "start" and not remoteJob then help(); return end
     if s and s.mode ~= "done" then error("Ja existe uma tarefa. Use dev mine resume ou status.", 0) end
-    local width, length, depth, minimum, jobId, jobName
+    local width, length, depth, minimum, jobId, jobName, requestId, startX, startY, startZ
     if args[1] == "start" or remoteJob then
         width, length = integer(args[2], 1, 256), integer(args[3], 1, 256)
         depth, minimum = integer(args[4], 1, 512), integer(args[5] or 500, 1, 1e9)
         if remoteJob then
-            jobId, jobName = args[6], args[7]
-            if not jobId or jobId == "" or not jobName or jobName == "" or #args > 8 then
-                error("Job remoto invalido.",0)
+            jobId, jobName, requestId = args[6], args[7], args[8]
+            startX, startY, startZ = tonumber(args[9]), tonumber(args[10]), tonumber(args[11])
+            if not jobId or jobId == "" or not jobName or jobName == ""
+                or not requestId or requestId == ""
+                or startX==nil or startY==nil or startZ==nil or #args > 11 then
+                error("Job remoto invalido ou sem coordenada inicial.",0)
             end
         elseif #args > 5 then
             help(); error("Dimensoes ou minimo invalidos.",0)
@@ -1316,15 +1319,51 @@ end
         write("Digite MINERAR para iniciar: ")
         if read() ~= "MINERAR" then print("Cancelado."); return end
     end
-    local baseGps = locateGps(2)
-    if baseGps then
-        print(string.format("Base GPS registrada: %.1f, %.1f, %.1f", baseGps.x, baseGps.y, baseGps.z))
+    local baseGps
+    if remoteJob then
+        local target={x=coord(startX),y=coord(startY),z=coord(startZ)}
+        local current=gpsPoint(2)
+        if not current then error("GPS sem sinal; nao consigo navegar ate o inicio do job.",0) end
+        local trip=manhattan(current,target)
+        if fuel() < trip + MARGIN then
+            error("Combustivel insuficiente para chegar ao inicio do job. Precisa de pelo menos "..(trip+MARGIN)..".",0)
+        end
+
+        s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
+            minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0,
+            baseGps=target, jobId=jobId, jobName=jobName, returnReason="INDO AO INICIO" }
+
+        if current.x~=target.x or current.y~=target.y or current.z~=target.z then
+            print("Indo para inicio do job em "..target.x..","..target.y..","..target.z.." sem quebrar blocos...")
+            routeInfo.state="INDO AO INICIO"
+            routeInfo.replans=0
+            routeInfo.remaining=nil
+            local nav,err=calibrateRawHeading()
+            if not nav then error(err,0) end
+            local ok,why=navigateAStar(nav,{target},{})
+            if not ok then error("Nao encontrei rota ate o inicio do job: "..tostring(why),0) end
+            nav.heading=turnRaw(nav.heading,nav.originalHeading)
+            local confirmed=gpsPoint(2)
+            if not confirmed or confirmed.x~=target.x or confirmed.y~=target.y or confirmed.z~=target.z then
+                error("Chegada ao inicio do job nao foi confirmada pelo GPS.",0)
+            end
+        end
+        baseGps=target
+        s.returnReason=nil
+        routeInfo.state=nil
+        routeInfo.remaining=nil
+        print("Inicio do job confirmado por GPS: "..target.x..","..target.y..","..target.z)
     else
-        error("GPS sem sinal. Stations exigem GPS; corrija o GPS antes de iniciar.",0)
+        baseGps = locateGps(2)
+        if baseGps then
+            print(string.format("Base GPS registrada: %.1f, %.1f, %.1f", baseGps.x, baseGps.y, baseGps.z))
+        else
+            error("GPS sem sinal. Stations exigem GPS; corrija o GPS antes de iniciar.",0)
+        end
+        s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
+            minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0,
+            baseGps=baseGps, jobId=jobId, jobName=jobName }
     end
-    s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
-        minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0,
-        baseGps=baseGps, jobId=jobId, jobName=jobName }
     save()
     runControlled()
 end
