@@ -2,6 +2,7 @@ local args={...}
 local JOB_PROTOCOL="atm10:job:command"
 local STATUS_PROTOCOL="atm10:job:status"
 local MINE_COMMAND="atm10:mine:command"
+local CONTROL_ACK_PROTOCOL="atm10:mine:control:ack"
 local TELEMETRY_PROTOCOL="atm10:mine:telemetry"
 local PATH="/dev/jobs"
 
@@ -91,15 +92,45 @@ end
 local function sendMine(target,command)
   target=tonumber(target)
   if not target then error("ID da turtle invalido.",0) end
-  local ok=rednet.send(target,{type="mine_command",target=target,command=command},MINE_COMMAND)
+
+  local req=tostring(os.getComputerID())..":"..command..":"..
+    tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
+
+  rednet.send(target,{
+    type="mine_command",target=target,command=command,requestId=req
+  },MINE_COMMAND)
+
+  local deadline=os.clock()+1.5
+  while os.clock()<deadline do
+    local id,reply=rednet.receive(CONTROL_ACK_PROTOCOL,0.25)
+    if id==target and type(reply)=="table" and reply.requestId==req then
+      print("Turtle confirmou comando: "..command)
+      return
+    end
+  end
+
   if command=="resume" or command=="cancel" then
-    local req=tostring(os.getComputerID())..":"..command..":"..
-      tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
+    print("Mineracao ativa nao respondeu; tentando estado salvo pelo agent...")
     rednet.send(target,{
       type="job_command",target=target,command=command,requestId=req
     },JOB_PROTOCOL)
+
+    local waitUntil=os.clock()+5
+    while os.clock()<waitUntil do
+      local id,reply=rednet.receive(STATUS_PROTOCOL,0.5)
+      if id==target and type(reply)=="table" and reply.requestId==req then
+        if reply.state=="ERRO" then
+          error("Turtle: "..tostring(reply.error or "erro desconhecido"),0)
+        end
+        print("Turtle: "..tostring(reply.state or "OK")
+          ..(reply.message and (" - "..reply.message) or ""))
+        return
+      end
+    end
+    error("Turtle nao respondeu ao "..command..".",0)
   end
-  print(ok and ("Comando enviado: "..command) or "Comando enviado pelo job agent: "..command)
+
+  print("Comando enviado sem confirmacao: "..command)
 end
 
 local function startJob(t,j)
