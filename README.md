@@ -382,3 +382,26 @@ dev scheduler
 O scheduler descobre agents livres e atribui automaticamente os jobs da fila.
 O fluxo manual `assign/start` continua disponivel. O `dev fleet` mostra a
 quantidade de jobs em fila no cabecalho.
+
+
+## Planejamento de chunks
+
+O sistema pode calcular os chunks que devem ser considerados para force-load no
+FTB Chunks:
+
+```text
+dev chunks
+dev chunks stations
+dev chunks job <nome-ou-id>
+```
+
+`dev chunks` combina stations e jobs ativos/em fila. Para transport, o
+planejador mostra os chunks das pontas e avisa que a rota pode atravessar chunks
+adicionais. Para mine, a area e conservadora porque a orientacao absoluta da
+quarry ainda nao e persistida no job.
+
+No `dev fleet`, selecione uma turtle e pressione `K` para abrir o planejamento
+de chunks do job atual; qualquer tecla retorna ao dashboard.
+
+O comando nao afirma se um chunk esta realmente force-loaded: CC:Tweaked nao
+possui uma API padrao do FTB Chunks para consultar ou alterar esse estado.
