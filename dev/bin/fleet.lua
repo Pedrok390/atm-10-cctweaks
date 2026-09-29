@@ -144,18 +144,20 @@ local function receiveLoop()
         if msg.type=="transport_status" then
           t.transport=msg
           t.mine=nil
-          t.active=msg.state~="CONCLUIDO" and msg.state~="SEM_CARGA" and msg.state~="ORIGEM_ESGOTADA"
+          t.transportActive=msg.state~="CONCLUIDO" and msg.state~="SEM_CARGA" and msg.state~="ORIGEM_ESGOTADA"
+          t.active=t.transportActive
           t.state=msg.state
           t.fuel=msg.fuel or t.fuel
         elseif msg.type=="job_agent_status" then
           t.label=msg.label or t.label
           t.fuel=msg.fuel
           t.active=msg.active
-          t.state=msg.state
-          if not msg.active and (not t.transport or not t.transportActive) then
-            if t.transport and (t.transport.state=="CONCLUIDO" or t.transport.state=="SEM_CARGA" or t.transport.state=="ORIGEM_ESGOTADA") then
-              -- keep final result visible
-            end
+          if msg.active then
+            t.state=msg.state
+          elseif t.transport and not t.transportActive then
+            t.state="LIVRE"
+          else
+            t.state=msg.state
           end
         end
       elseif protocol==TELEMETRY_PROTOCOL and msg.type=="mine_status" then
