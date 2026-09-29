@@ -155,7 +155,8 @@ local function receiveLoop()
         if msg.type=="transport_status" then
           t.transport=msg
           t.mine=nil
-          t.transportActive=msg.state~="CONCLUIDO" and msg.state~="SEM_CARGA" and msg.state~="ORIGEM_ESGOTADA"
+          t.transportActive=msg.state~="CONCLUIDO" and msg.state~="SEM_CARGA"
+            and msg.state~="ORIGEM_ESGOTADA" and msg.state~="CANCELADO"
           t.active=t.transportActive
           t.state=msg.state
           t.fuel=msg.fuel or t.fuel
@@ -246,7 +247,12 @@ local function control(command)
   if not t then setNotice("Selecione uma turtle."); return end
   if age(t)>20 then setNotice("Turtle #"..t.id.." esta offline."); return end
   if t.transportActive then
-    setNotice("Controle "..command.." ainda nao suportado em transport.")
+    if command=="home" then
+      setNotice("Transport nao usa BASE; pause ou cancele com seguranca.")
+      return
+    end
+    runJobs("transport-control",tostring(t.id),command)
+    setNotice(command.." enviado ao transport #"..t.id)
     return
   end
   if not t.mine and not t.active then
@@ -272,7 +278,11 @@ local function inputLoop()
       if t then chooseJob(t.id) else setNotice("Selecione uma turtle.") end
     elseif key==keys.p then
       local t=selectedTurtle()
-      if t and t.mine and t.mine.paused then control("resume") else control("pause") end
+      if t and ((t.mine and t.mine.paused) or (t.transport and t.transport.state=="PAUSADO")) then
+        control("resume")
+      else
+        control("pause")
+      end
     elseif key==keys.h then control("home")
     elseif key==keys.c then control("cancel")
     end
