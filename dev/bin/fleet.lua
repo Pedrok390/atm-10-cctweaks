@@ -4,6 +4,13 @@ local STATUS_PROTOCOL="atm10:job:status"
 local TELEMETRY_PROTOCOL="atm10:mine:telemetry"
 local turtles={}
 local selected=1
+local notice=""
+local noticeAt=0
+
+local function setNotice(s)
+  notice=tostring(s or "")
+  noticeAt=os.clock()
+end
 
 local function openWireless()
   for _,name in ipairs(peripheral.getNames()) do
@@ -125,7 +132,11 @@ local function render()
     put(1,y+1,"Nenhuma turtle encontrada.")
     put(1,y+2,"Aguardando agents wireless...")
   end
-  put(1,h,"UP/DOWN seleciona | Q sai | R descobre")
+  if notice~="" and os.clock()-noticeAt<5 then
+    put(1,h,trim(notice,w))
+  else
+    put(1,h,"UP/DOWN | J job | P pausa | H base | C canc | R")
+  end
 end
 
 local function touch(id)
@@ -179,6 +190,73 @@ local function refreshLoop()
   end
 end
 
+local function selectedTurtle()
+  return sorted()[selected]
+end
+
+local function runJobs(...)
+  local argv={...}
+  local ok,err=pcall(function()
+    shell.run("/dev/bin/jobs.lua",table.unpack(argv))
+  end)
+  if not ok then setNotice("ERRO: "..tostring(err)) end
+  rednet.broadcast({type="job_command",command="discover"},JOB_PROTOCOL)
+end
+
+local function chooseJob(turtleId)
+  if not fs.exists("/dev/jobs") then setNotice("Nenhum job salvo."); return end
+  local h=fs.open("/dev/jobs","r")
+  if not h then setNotice("Nao consegui abrir /dev/jobs"); return end
+  local raw=h.readAll(); h.close()
+  local ok,data=pcall(textutils.unserialize,raw or "")
+  if not ok or type(data)~="table" or type(data.jobs)~="table" or #data.jobs==0 then
+    setNotice("Nenhum job salvo."); return
+  end
+
+  term.clear()
+  put(1,1,"INICIAR JOB NA TURTLE #"..turtleId)
+  put(1,2,"Digite numero/nome ou vazio para voltar:")
+  local y=3
+  local _,height=term.getSize()
+  for _,j in ipairs(data.jobs) do
+    if y>=height then break end
+    put(1,y,string.format("#%s %-9s %s",tostring(j.id),tostring(j.type or "mine"),tostring(j.name)))
+    y=y+1
+  end
+  term.setCursorPos(1,math.min(height,y+1))
+  term.write("> ")
+  local key=read()
+  if key=="" then setNotice("Inicio cancelado."); return end
+
+  local chosen
+  for _,j in ipairs(data.jobs) do
+    if tostring(j.id)==key or j.name==key then chosen=j; break end
+  end
+  if not chosen then setNotice("Job nao encontrado: "..key); return end
+  if chosen.turtleId and tonumber(chosen.turtleId)~=tonumber(turtleId) then
+    setNotice("Job reatribuido para #"..turtleId)
+  end
+  runJobs("assign",tostring(chosen.id),tostring(turtleId))
+  runJobs("start",tostring(chosen.id))
+  setNotice("Job "..tostring(chosen.name).." enviado para #"..turtleId)
+end
+
+local function control(command)
+  local t=selectedTurtle()
+  if not t then setNotice("Selecione uma turtle."); return end
+  if age(t)>20 then setNotice("Turtle #"..t.id.." esta offline."); return end
+  if t.transportActive then
+    setNotice("Controle "..command.." ainda nao suportado em transport.")
+    return
+  end
+  if not t.mine and not t.active then
+    setNotice("Turtle #"..t.id.." nao esta minerando.")
+    return
+  end
+  runJobs(command,tostring(t.id))
+  setNotice(command.." enviado para #"..t.id)
+end
+
 local function inputLoop()
   while true do
     local _,key=os.pullEvent("key")
@@ -188,6 +266,15 @@ local function inputLoop()
     elseif key==keys.down then selected=math.min(math.max(1,#list),selected+1)
     elseif key==keys.r then
       rednet.broadcast({type="job_command",command="discover"},JOB_PROTOCOL)
+      setNotice("Descoberta enviada.")
+    elseif key==keys.j then
+      local t=selectedTurtle()
+      if t then chooseJob(t.id) else setNotice("Selecione uma turtle.") end
+    elseif key==keys.p then
+      local t=selectedTurtle()
+      if t and t.mine and t.mine.paused then control("resume") else control("pause") end
+    elseif key==keys.h then control("home")
+    elseif key==keys.c then control("cancel")
     end
     render()
   end
