@@ -168,3 +168,21 @@ exemplo, confira o bau, o retorno a origem e o esvaziamento das duas camadas.
 
 Referencias: [turtle](https://tweaked.cc/module/turtle.html) e
 [inventarios](https://tweaked.cc/generic_peripheral/inventory.html).
+
+
+## Trash blacklist
+
+A mining turtle descarta automaticamente itens configurados na blacklist antes
+de decidir que o inventario esta cheio.
+
+```text
+dev trash list
+dev trash add minecraft:deepslate
+dev trash remove minecraft:dirt
+dev trash clear
+dev trash reset
+```
+
+Na primeira instalacao, os padroes sao `minecraft:cobblestone` e
+`minecraft:dirt`. `clear` deixa a lista vazia; `reset` restaura esses dois
+padroes. A configuracao fica salva em `/dev/trash-list`.
