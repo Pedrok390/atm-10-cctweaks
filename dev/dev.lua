@@ -37,7 +37,7 @@ elseif command == "status" then
     print("Nome: " .. (os.getComputerLabel() or "sem nome"))
     print("Sistema: " .. os.version())
     print("HTTP: " .. ((http and http.get) and "disponivel" or "desativado"))
-    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua", "/dev/bin/fuel.lua", "/dev/bin/station.lua", "/dev/bin/trash.lua", "/dev/bin/transport.lua", "/dev/bin/fleet.lua", "/dev/bin/scheduler.lua", "/dev/bin/chunks.lua", "/dev/bin/jobs.lua", "/dev/bin/agent.lua", "/dev/bin/dashboard.lua" }) do
+    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua", "/dev/bin/fuel.lua", "/dev/bin/station.lua", "/dev/bin/trash.lua", "/dev/bin/transport.lua", "/dev/bin/fleet.lua", "/dev/bin/scheduler.lua", "/dev/bin/chunks.lua", "/dev/bin/watchdog.lua", "/dev/bin/jobs.lua", "/dev/bin/agent.lua", "/dev/bin/dashboard.lua" }) do
         print(((fs.exists(path) and not fs.isDir(path)) and "[OK] " or "[AUSENTE] ") .. path)
     end
     print("Peripherals: " .. #peripheral.getNames())
@@ -60,6 +60,10 @@ elseif command == "fuel" then
 elseif command == "mine" then
     if not shell.execute("/dev/bin/mine.lua", table.unpack(args, 2)) then
         error("Mineracao interrompida. Leia a mensagem acima; use dev mine status.", 0)
+    end
+elseif command == "watchdog" then
+    if not shell.execute("/dev/bin/watchdog.lua", table.unpack(args, 2)) then
+        error("Falha no watchdog.",0)
     end
 elseif command == "jobs" then
     if not shell.execute("/dev/bin/jobs.lua", table.unpack(args, 2)) then
