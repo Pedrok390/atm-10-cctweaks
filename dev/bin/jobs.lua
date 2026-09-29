@@ -53,10 +53,13 @@ end
 local function discover(seconds)
   seconds=tonumber(seconds) or 3
   local found={}
+  local req=tostring(os.getComputerID())..":discover:"..tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
+  rednet.broadcast({type="job_command",command="discover",requestId=req},JOB_PROTOCOL)
   local deadline=os.clock()+seconds
   while os.clock()<deadline do
     local id,msg=rednet.receive(STATUS_PROTOCOL,0.5)
-    if id and type(msg)=="table" and msg.type=="job_agent_status" then
+    if id and type(msg)=="table" and msg.type=="job_agent_status"
+      and (msg.requestId==req or msg.requestId==nil) then
       found[id]=msg
     end
   end

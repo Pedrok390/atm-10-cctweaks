@@ -86,6 +86,9 @@ elseif command == "update" then
     local installer, syntax = load(source, "@install.lua", "t", _ENV)
     if not installer then error("Instalador invalido: " .. tostring(syntax), 0) end
     installer()
+    if turtle then
+        print("Reinicie a turtle para ativar/atualizar o job agent em background.")
+    end
 else
     error("Comando desconhecido: " .. command .. ". Use dev help.", 0)
 end

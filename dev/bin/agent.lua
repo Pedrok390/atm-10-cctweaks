@@ -55,8 +55,13 @@ local function announce(state,extra)
 end
 
 local function executeJob(msg)
-  if type(msg)~="table" or msg.type~="job_command" or msg.command~="start" then return false end
+  if type(msg)~="table" or msg.type~="job_command" then return false end
   if msg.target and msg.target~=os.getComputerID() then return false end
+  if msg.command=="discover" then
+    announce(hasActiveMine() and "OCUPADA" or "LIVRE",{requestId=msg.requestId})
+    return true
+  end
+  if msg.command~="start" then return false end
   if hasActiveMine() then
     announce("OCUPADA",{requestId=msg.requestId,error="tarefa existente"})
     return true
