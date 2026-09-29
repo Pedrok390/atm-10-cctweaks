@@ -68,18 +68,24 @@ local function loadStation(name)
 end
 
 local function loadFuelPlace()
-    local station=loadStation("fuel")
-    if station then return station end
-    -- Legacy compatibility for installations configured before stations.
-    if not fs.exists(FUEL_PLACE) then return nil end
-    local h = fs.open(FUEL_PLACE, "r")
-    if not h then return nil end
-    local raw = h.readAll()
-    h.close()
-    local ok, t = pcall(textutils.unserialize, raw or "")
-    if not ok or type(t) ~= "table" or tonumber(t.x) == nil
-        or tonumber(t.y) == nil or tonumber(t.z) == nil then return nil end
-    return { x = tonumber(t.x), y = tonumber(t.y), z = tonumber(t.z) }
+    return loadStation("fuel")
+end
+
+local function validateMiningStations(requireGps)
+    local missing = {}
+    if not loadStation("unload") then missing[#missing+1] = "unload" end
+    if not loadStation("fuel") then missing[#missing+1] = "fuel" end
+    if #missing > 0 then
+        local commands = {}
+        for _, name in ipairs(missing) do
+            commands[#commands+1] = "dev station set "..name.." <x> <y> <z>"
+        end
+        error("Stations obrigatorias ausentes: "..table.concat(missing,", ")
+            ..". Configure antes de minerar:\n"..table.concat(commands,"\n"),0)
+    end
+    if requireGps and (not s or not s.baseGps) then
+        error("Esta tarefa nao possui GPS da origem. Use dev mine recover-home na origem antes de retomar.",0)
+    end
 end
 
 local function coord(n)
@@ -234,7 +240,7 @@ local function help()
     print("dev mine status - mostra progresso")
     print("dev mine recover-home - apos recolocar na origem e orientacao inicial")
     print("dev mine cancel - cancela a tarefa quando a turtle esta na base")
-    print("Bau ATRAS, turtle sobre o canto inicial da area.")
+    print("Turtle sobre o canto inicial da area; nenhum bau e necessario na origem.")
     print("Area: para a frente e para a direita; primeira camada logo ABAIXO.")
     print("Desce direto se houver ar na coluna inicial; pode pular blocos isolados.")
     print("Camadas de ar contam no limite de profundidade escolhido.")
@@ -242,7 +248,7 @@ local function help()
     print("So volta a superficie por inventario cheio, combustivel baixo, fim ou comando.")
     print("Cobblestone e dirt sao descartados automaticamente.")
     print("O abastecimento aceita qualquer item reconhecido por turtle.refuel(0).")
-    print("Use dev fuel set <x> <y> <z> para definir o bau de combustivel.")
+    print("Configure antes: dev station set fuel <x> <y> <z> e unload <x> <y> <z>.")
     print("Ao abastecer, volta primeiro a base e depois vai ao bau SEM quebrar blocos.")
     print("Recipientes restantes, como o balde da lava, voltam para o mesmo bau.")
     print("Ctrl+T interrompe. Nao mova/gire manualmente; use resume.")
@@ -551,22 +557,6 @@ local function waitFor(message)
 end
 
 local unloadAtConfiguredStation
-
-local function unloadAtBase()
-    face(2)
-    while true do
-        chest() -- Never drop into the world if the chest is absent.
-        for i = 1, 16 do
-            if turtle.getItemCount(i) > 0 then
-                turtle.select(i)
-                chest()
-                turtle.drop()
-            end
-        end
-        if emptySlots() == 16 then lastWait = nil; return end
-        waitFor("Bau cheio. Libere espaco; aguardando na base...")
-    end
-end
 
 local function miningFuelNeeded()
     return math.max(s.minimum, 2 * (s.width + s.length + s.depth - 2) + MARGIN)
@@ -945,8 +935,7 @@ end
 local function refuelAtConfiguredPlace()
     local place = loadFuelPlace()
     if not place then
-        -- Backwards compatible fallback: the old base chest is still usable.
-        return refuelFromFront(miningFuelNeeded())
+        error("Station fuel nao configurada. Use: dev station set fuel <x> <y> <z>",0)
     end
     if not s.baseGps then
         error("Bau de combustivel configurado, mas esta tarefa nao possui GPS da base.", 0)
@@ -1040,7 +1029,9 @@ end
 
 unloadAtConfiguredStation = function()
     local place=loadStation("unload")
-    if not place then return unloadAtBase() end
+    if not place then
+        error("Station unload nao configurada. Use: dev station set unload <x> <y> <z>",0)
+    end
     if not s.baseGps then
         error("Station unload configurada, mas esta tarefa nao possui GPS da base.",0)
     end
@@ -1236,7 +1227,7 @@ local function main()
     end
     if args[1] == "recover-home" then
         if not s or s.mode == "done" then error("Nao ha tarefa ativa para recuperar.", 0) end
-        print("Recoloque a turtle na origem, voltada como no inicio, com bau atras.")
+        print("Recoloque a turtle na origem, voltada como no inicio.")
         write("Digite ORIGEM para confirmar: ")
         if read() ~= "ORIGEM" then print("Cancelado."); return end
         s.x, s.y, s.z, s.dir, s.pending, s.mode = 0, 0, 0, 0, nil, "dock"
@@ -1268,6 +1259,7 @@ local function main()
     if args[1] == "resume" then
         if not s then error("Nenhuma tarefa salva. Use dev mine.", 0) end
         if s.pending then error("Interrupcao durante movimento: posicao incerta. Use dev mine recover-home.", 0) end
+        validateMiningStations(true)
         runControlled()
         return
     end
@@ -1285,18 +1277,19 @@ local function main()
         depth = prompt("Camadas abaixo da turtle", 3, 512)
         minimum = prompt("Combustivel minimo para sair", 500, 1e9)
     end
+    validateMiningStations(false)
     local needed = math.max(minimum, 2 * (width + length + depth - 2) + MARGIN)
     local limit = turtle.getFuelLimit()
     if type(limit) == "number" and needed > limit then error("Minimo/reserva excede a capacidade de " .. limit .. ". Reduza os valores.", 0) end
     print("Area " .. width .. "x" .. length .. "; " .. depth .. " camadas ABAIXO; reserva: " .. needed)
-    print("Bau atras; primeiro item acessivel usado para abastecer. Nao mova a turtle durante a tarefa.")
+    print("Stations fuel/unload configuradas. Nao mova a turtle durante a tarefa.")
     write("Digite MINERAR para iniciar: ")
     if read() ~= "MINERAR" then print("Cancelado."); return end
     local baseGps = locateGps(2)
     if baseGps then
         print(string.format("Base GPS registrada: %.1f, %.1f, %.1f", baseGps.x, baseGps.y, baseGps.z))
     else
-        print("GPS sem sinal. A mineracao continuara usando coordenadas relativas.")
+        error("GPS sem sinal. Stations exigem GPS; corrija o GPS antes de iniciar.",0)
     end
     s = { version=1, serial=s and s.serial or 0, width=width, length=length, depth=depth,
         minimum=minimum, layer=1, cursor=0, x=0, y=0, z=0, dir=0, mode="dock", dug=0,

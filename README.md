@@ -186,3 +186,17 @@ dev trash reset
 Na primeira instalacao, os padroes sao `minecraft:cobblestone` e
 `minecraft:dirt`. `clear` deixa a lista vazia; `reset` restaura esses dois
 padroes. A configuracao fica salva em `/dev/trash-list`.
+
+
+## Stations obrigatorias para mineracao
+
+A mining turtle agora exige as stations `fuel` e `unload` antes de iniciar ou
+retomar uma tarefa:
+
+```text
+dev station set fuel <x> <y> <z>
+dev station set unload <x> <y> <z>
+```
+
+Nao existe mais fallback para bau local na origem. Como as viagens usam GPS,
+uma nova tarefa tambem exige sinal GPS valido na origem.
