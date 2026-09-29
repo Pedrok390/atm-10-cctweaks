@@ -8,6 +8,7 @@ local FUEL_MAP = "/dev/fuel-map"
 local MARGIN = 32
 local TELEMETRY_PROTOCOL = "atm10:mine:telemetry"
 local COMMAND_PROTOCOL = "atm10:mine:command"
+local CONTROL_ACK_PROTOCOL = "atm10:mine:control:ack"
 local JOB_STATUS_PROTOCOL = "atm10:job:status"
 local s
 local save
@@ -224,8 +225,16 @@ end
 
 local function controlListener()
     while true do
-        local _, msg = rednet.receive(COMMAND_PROTOCOL)
-        applyControl(msg)
+        local sender, msg = rednet.receive(COMMAND_PROTOCOL)
+        local applied = applyControl(msg)
+        if applied and type(msg)=="table" and msg.requestId and sender then
+            rednet.send(sender,{
+                type="mine_control_ack",
+                requestId=msg.requestId,
+                command=msg.command,
+                id=os.getComputerID(),
+            },CONTROL_ACK_PROTOCOL)
+        end
     end
 end
 
@@ -1272,7 +1281,19 @@ local function main()
             print("Nenhuma mineracao ativa.")
             return
         end
-        if s.pending then error("Posicao incerta. Use dev mine recover-home antes de cancelar.", 0) end
+        if s.pending then
+            local current=gpsPoint(2)
+            local base=s.baseGps and {
+                x=coord(s.baseGps.x),y=coord(s.baseGps.y),z=coord(s.baseGps.z)
+            } or nil
+            if current and base and current.x==base.x and current.y==base.y and current.z==base.z then
+                deleteState()
+                print("Tarefa pendente cancelada: GPS confirmou que a turtle esta na origem.")
+                return
+            end
+            local where=current and (current.x..","..current.y..","..current.z) or "sem GPS"
+            error("Posicao incerta e fora da origem ("..where.."). Use dev mine recover-home antes de cancelar.", 0)
+        end
         validateMiningStations(true)
         s.remotePaused = false
         s.remoteHome = true
