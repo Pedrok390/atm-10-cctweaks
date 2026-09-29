@@ -278,7 +278,7 @@ O Pocket pode criar um job para mover itens entre duas stations configuradas na
 turtle:
 
 ```text
-dev jobs create transport <nome> <station-origem> <station-destino>
+dev jobs create transport <nome> <station-origem> <station-destino> [item] [quantidade]
 dev jobs assign <nome> <turtleId>
 dev jobs start <nome>
 ```
@@ -294,3 +294,18 @@ dev jobs start lava
 A turtle exige inventario vazio, calibra a orientacao com GPS, navega sem quebrar
 blocos ate uma posicao adjacente a origem, coleta os itens que couberem, segue ate
 o destino e descarrega tudo. O job e de uma unica viagem nesta primeira versao.
+
+
+### Filtro e quantidade no transport
+
+O transport pode filtrar pelo ID completo do item e repetir viagens:
+
+```text
+dev jobs create transport ferro storage smelter minecraft:iron_ingot 1024
+dev jobs create transport carvao storage generators minecraft:coal 256
+dev jobs create transport pedra quarry storage minecraft:cobblestone
+```
+
+Com quantidade, a turtle repete viagens ate entregar o total solicitado ou ate a
+origem nao fornecer mais o item. Com filtro e sem quantidade, continua ate esgotar
+esse item na origem. Sem filtro, mantem o comportamento simples de uma viagem.
