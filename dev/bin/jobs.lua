@@ -135,16 +135,23 @@ end
 
 local function startJob(t,j)
   if not j.turtleId then error("Job sem turtle. Use dev jobs assign <job> <id>.",0) end
-  if (j.type or "mine")~="mine" then error("Tipo de job ainda nao suportado.",0) end
-  if type(j.start)~="table" or tonumber(j.start.x)==nil or tonumber(j.start.y)==nil or tonumber(j.start.z)==nil then
+  local kind=j.type or "mine"
+  if kind=="mine" and (type(j.start)~="table" or tonumber(j.start.x)==nil or tonumber(j.start.y)==nil or tonumber(j.start.z)==nil) then
     error("Job antigo sem coordenada inicial. Recrie com: dev jobs create mine <nome> <w> <l> <d> <x> <y> <z> [minFuel]",0)
+  elseif kind=="transport" and (not j.source or not j.destination) then
+    error("Job transport invalido.",0)
+  elseif kind~="mine" and kind~="transport" then
+    error("Tipo de job nao suportado: "..tostring(kind),0)
   end
   local req=tostring(os.getComputerID())..":"..tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
   local msg={
     type="job_command",command="start",target=j.turtleId,requestId=req,
-    jobId=tostring(j.id),jobName=j.name,width=j.width,length=j.length,
-    depth=j.depth,minimum=j.minimum,
-    startX=j.start.x,startY=j.start.y,startZ=j.start.z,
+    jobId=tostring(j.id),jobName=j.name,jobType=kind,
+    width=j.width,length=j.length,depth=j.depth,minimum=j.minimum,
+    startX=j.start and j.start.x or nil,
+    startY=j.start and j.start.y or nil,
+    startZ=j.start and j.start.z or nil,
+    source=j.source,destination=j.destination,
   }
   if not rednet.send(j.turtleId,msg,JOB_PROTOCOL) then error("Nao consegui enviar o job para a turtle.",0) end
   print("Job enviado. Aguardando a turtle realmente iniciar...")
@@ -156,7 +163,7 @@ local function startJob(t,j)
       if reply.state=="INICIANDO" then
         accepted=true
         j.state="INICIANDO"; saveJobs(t)
-        print("Turtle aceitou; aguardando telemetria da mineracao...")
+        print("Turtle aceitou; aguardando inicio do job...")
       elseif reply.state=="OCUPADA" or reply.state=="ERRO" then
         j.state=reply.state; saveJobs(t)
         error("Turtle nao iniciou: "..tostring(reply.error or reply.state),0)
@@ -164,7 +171,12 @@ local function startJob(t,j)
     elseif protocol==TELEMETRY_PROTOCOL and sender==j.turtleId and type(reply)=="table"
       and tostring(reply.jobId or "")==tostring(j.id) then
       j.state="MINERANDO"; saveJobs(t)
-      print("Job iniciado de verdade. Telemetria recebida da turtle.")
+      print("Job de mineracao iniciado. Telemetria recebida.")
+      return
+    elseif protocol==STATUS_PROTOCOL and sender==j.turtleId and type(reply)=="table"
+      and reply.type=="transport_status" and tostring(reply.jobId or "")==tostring(j.id) then
+      j.state=reply.state or "TRANSPORTANDO"; saveJobs(t)
+      print("Transport ativo: "..tostring(j.state))
       return
     end
   end
@@ -178,7 +190,7 @@ local function startJob(t,j)
 end
 
 local function createJob(t,kind,name,w,l,d,x,y,z,m)
-  if kind~="mine" then error("Tipo suportado agora: mine",0) end
+  if kind~="mine" then error("Use createTransport para jobs transport.",0) end
   if not name or name=="" or name:find("%s") then error("Nome do job deve ser uma palavra.",0) end
   if findJob(t,name) then error("Ja existe job com esse nome.",0) end
   w,l,d=integer(w,1,256),integer(l,1,256),integer(d,1,512)
@@ -195,6 +207,22 @@ local function createJob(t,kind,name,w,l,d,x,y,z,m)
   t.jobs[#t.jobs+1]=j
   saveJobs(t)
   print("Job criado: #"..j.id.." "..j.name.." inicio="..x..","..y..","..z)
+end
+
+local function createTransport(t,name,source,destination)
+  if not name or name=="" or name:find("%s") then error("Nome do job deve ser uma palavra.",0) end
+  if findJob(t,name) then error("Ja existe job com esse nome.",0) end
+  if not source or source=="" or not destination or destination=="" then
+    error("Uso: dev jobs create transport <nome> <origem> <destino>",0)
+  end
+  if source==destination then error("Origem e destino precisam ser diferentes.",0) end
+  local j={
+    id=t.nextId,type="transport",name=name,source=source,destination=destination,state="CRIADO",
+  }
+  t.nextId=t.nextId+1
+  t.jobs[#t.jobs+1]=j
+  saveJobs(t)
+  print("Job transport criado: #"..j.id.." "..name.." "..source.." -> "..destination)
 end
 
 local function menu(t)
@@ -219,16 +247,25 @@ local function menu(t)
     elseif op=="1" then
       printTurtles(discover(3)); print("Enter..."); read()
     elseif op=="2" then
-      print("Tipo: mine")
-      write("Nome: "); local name=read()
-      write("Largura: "); local w=read()
-      write("Comprimento: "); local l=read()
-      write("Profundidade: "); local d=read()
-      write("Inicio GPS X: "); local x=read()
-      write("Inicio GPS Y: "); local y=read()
-      write("Inicio GPS Z: "); local z=read()
-      write("Min fuel [500]: "); local m=read(); if m=="" then m=500 end
-      local ok,err=pcall(createJob,t,"mine",name,w,l,d,x,y,z,m); if not ok then printError(err); sleep(2) end
+      write("Tipo [mine/transport]: "); local kind=read()
+      if kind=="transport" then
+        write("Nome: "); local name=read()
+        write("Station origem: "); local source=read()
+        write("Station destino: "); local destination=read()
+        local ok,err=pcall(createTransport,t,name,source,destination)
+        if not ok then printError(err); sleep(2) end
+      else
+        write("Nome: "); local name=read()
+        write("Largura: "); local w=read()
+        write("Comprimento: "); local l=read()
+        write("Profundidade: "); local d=read()
+        write("Inicio GPS X: "); local x=read()
+        write("Inicio GPS Y: "); local y=read()
+        write("Inicio GPS Z: "); local z=read()
+        write("Min fuel [500]: "); local m=read(); if m=="" then m=500 end
+        local ok,err=pcall(createJob,t,"mine",name,w,l,d,x,y,z,m)
+        if not ok then printError(err); sleep(2) end
+      end
     elseif op=="3" then
       write("Job nome/id: "); local key=read()
       local j=findJob(t,key)
@@ -257,7 +294,12 @@ local cmd=args[1]
 if not cmd then menu(t)
 elseif cmd=="list" then listJobs(t)
 elseif cmd=="discover" then printTurtles(discover(args[2] or 3))
-elseif cmd=="create" then createJob(t,args[2],args[3],args[4],args[5],args[6],args[7],args[8],args[9],args[10])
+elseif cmd=="create" then
+  if args[2]=="transport" then
+    createTransport(t,args[3],args[4],args[5])
+  else
+    createJob(t,args[2],args[3],args[4],args[5],args[6],args[7],args[8],args[9],args[10])
+  end
 elseif cmd=="assign" then
   local j=findJob(t,args[2]); local id=tonumber(args[3])
   if not j or not id then error("Uso: dev jobs assign <job> <turtleId>",0) end
