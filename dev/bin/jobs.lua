@@ -92,11 +92,11 @@ local function sendMine(target,command)
   target=tonumber(target)
   if not target then error("ID da turtle invalido.",0) end
   local ok=rednet.send(target,{type="mine_command",target=target,command=command},MINE_COMMAND)
-  if command=="resume" then
-    local req=tostring(os.getComputerID())..":resume:"..
+  if command=="resume" or command=="cancel" then
+    local req=tostring(os.getComputerID())..":"..command..":"..
       tostring(os.epoch and os.epoch("utc") or math.floor(os.clock()*1000))
     rednet.send(target,{
-      type="job_command",target=target,command="resume",requestId=req
+      type="job_command",target=target,command=command,requestId=req
     },JOB_PROTOCOL)
   end
   print(ok and ("Comando enviado: "..command) or "Comando enviado pelo job agent: "..command)
