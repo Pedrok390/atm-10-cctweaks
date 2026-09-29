@@ -118,9 +118,12 @@ local function receiveLoop()
         local t=turtles[id]
         t.seen=now(); t.active=msg.active; t.state=msg.state; t.label=msg.label
         if not msg.active and pending[id] and now()-pending[id].since>12 then
-          local p=pending[id]; pending[id]=nil
+          local p=pending[id]
           updateJob(p.jobId,function(j)
-            if j.state=="DESPACHANDO" then j.state="FILA"; j.turtleId=nil; j.schedulerRequest=nil end
+            if j.state=="DESPACHANDO" or j.state=="INICIANDO" then
+              pending[id]=nil
+              j.state="FILA"; j.turtleId=nil; j.schedulerRequest=nil
+            end
           end)
         end
       elseif protocol==STATUS_PROTOCOL and msg.requestId then
@@ -131,8 +134,10 @@ local function receiveLoop()
           elseif msg.state=="OCUPADA" or msg.state=="ERRO" then
             pending[id]=nil
             updateJob(p.jobId,function(j)
-              j.state="FILA"; j.turtleId=nil; j.schedulerRequest=nil
-              j.lastError=msg.error or msg.state
+              if j.state=="DESPACHANDO" or j.state=="INICIANDO" then
+                j.state="FILA"; j.turtleId=nil; j.schedulerRequest=nil
+                j.lastError=msg.error or msg.state
+              end
             end)
           end
         end
