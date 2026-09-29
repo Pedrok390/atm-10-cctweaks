@@ -18,6 +18,8 @@ if command == "help" then
     print("dev station set <nome> x y z")
     print("dev station show <nome>")
     print("dev station clear <nome>")
+    print("dev station remote <id> set <nome> x y z")
+    print("dev station broadcast set <nome> x y z")
     print("dev trash list     - Lista itens descartados")
     print("dev trash add <item>")
     print("dev trash remove <item>")
