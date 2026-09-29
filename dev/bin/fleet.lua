@@ -245,6 +245,14 @@ local function control(command)
   local t=selectedTurtle()
   if not t then setNotice("Selecione uma turtle."); return end
   if age(t)>20 then setNotice("Turtle #"..t.id.." esta offline."); return end
+  if t.transportActive then
+    setNotice("Controle "..command.." ainda nao suportado em transport.")
+    return
+  end
+  if not t.mine and not t.active then
+    setNotice("Turtle #"..t.id.." nao esta minerando.")
+    return
+  end
   runJobs(command,tostring(t.id))
   setNotice(command.." enviado para #"..t.id)
 end
