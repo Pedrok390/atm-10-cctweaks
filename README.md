@@ -309,3 +309,20 @@ dev jobs create transport pedra quarry storage minecraft:cobblestone
 Com quantidade, a turtle repete viagens ate entregar o total solicitado ou ate a
 origem nao fornecer mais o item. Com filtro e sem quantidade, continua ate esgotar
 esse item na origem. Sem filtro, mantem o comportamento simples de uma viagem.
+
+
+## Dashboard da frota
+
+No Advanced Wireless Pocket Computer:
+
+```text
+dev fleet
+```
+
+A tela descobre agents wireless e mostra ID, tipo do job, estado e progresso de
+cada turtle. Mineração exibe camada/profundidade e percentual da camada atual.
+Transport exibe itens entregues/meta e número de viagens. Use as setas para
+selecionar uma turtle, `R` para redescobrir agents e `Q` para sair.
+
+O agent também mantém o estado OCUPADA durante a execução de jobs transport, para
+que o dashboard e o job manager não tratem uma turtle em transporte como livre.

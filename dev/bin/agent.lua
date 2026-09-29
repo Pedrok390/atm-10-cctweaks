@@ -3,6 +3,7 @@ local STATUS_PROTOCOL="atm10:job:status"
 local TELEMETRY_PROTOCOL="atm10:mine:telemetry"
 local STATION_STATUS_PROTOCOL="atm10:station:status"
 local STATIONS_PATH="/dev/stations"
+local activeRuntime=nil
 
 if not turtle then error("Este agent deve rodar em uma turtle.",0) end
 
@@ -49,7 +50,10 @@ local function announce(state,extra)
     id=os.getComputerID(),
     label=os.getComputerLabel() or ("Turtle "..os.getComputerID()),
     state=state,
-    active=hasActiveMine(),
+    active=hasActiveMine() or activeRuntime~=nil,
+    jobType=activeRuntime and activeRuntime.type or (hasActiveMine() and "mine" or nil),
+    jobId=activeRuntime and activeRuntime.jobId or nil,
+    jobName=activeRuntime and activeRuntime.jobName or nil,
     fuel=turtle.getFuelLevel(),
   }
   if type(extra)=="table" then for k,v in pairs(extra) do msg[k]=v end end
@@ -176,9 +180,11 @@ local function executeJob(msg)
       announce("ERRO",{requestId=msg.requestId,error="job transport invalido"})
       return true
     end
+    activeRuntime={type="transport",jobId=msg.jobId,jobName=msg.jobName}
     ok=shell.execute("/dev/bin/transport.lua",msg.source,msg.destination,
       tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "transport"),
       tostring(msg.item or ""),tostring(msg.quantity or ""))
+    activeRuntime=nil
   elseif kind=="mine" then
     local w,l,d,m=tonumber(msg.width),tonumber(msg.length),tonumber(msg.depth),tonumber(msg.minimum or 500)
     local sx,sy,sz=tonumber(msg.startX),tonumber(msg.startY),tonumber(msg.startZ)
