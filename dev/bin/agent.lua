@@ -133,6 +133,21 @@ local function executeJob(msg)
     announce(hasActiveMine() and "OCUPADA" or "LIVRE",{requestId=msg.requestId})
     return true
   end
+  if msg.command=="resume" then
+    local state=latestMineState()
+    if not state or state.mode=="done" then
+      announce("ERRO",{requestId=msg.requestId,error="nenhuma mineracao ativa para retomar"})
+      return true
+    end
+    announce("RETOMANDO",{requestId=msg.requestId,jobId=state.jobId,jobName=state.jobName})
+    local ok=shell.execute("/dev/bin/mine.lua","resume")
+    if ok then
+      announce("LIVRE",{requestId=msg.requestId,lastJobId=state.jobId})
+    else
+      announce("ERRO",{requestId=msg.requestId,jobId=state.jobId,error="mine.lua resume terminou com erro"})
+    end
+    return true
+  end
   if msg.command~="start" then return false end
   if hasActiveMine() then
     announce("OCUPADA",{requestId=msg.requestId,error="tarefa existente"})
