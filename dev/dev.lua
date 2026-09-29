@@ -11,6 +11,9 @@ if command == "help" then
     print("dev mine           - Configura a mineracao")
     print("dev mine help      - Ajuda da mining turtle")
     print("dev dashboard      - Painel 4x4 das turtles")
+    print("dev jobs           - Job manager (Pocket/PC)")
+    print("dev jobs discover  - Procura turtles livres")
+    print("dev agent          - Agent de jobs (turtle)")
     print("dev station list   - Lista stations")
     print("dev station set <nome> x y z")
     print("dev station show <nome>")
@@ -32,7 +35,7 @@ elseif command == "status" then
     print("Nome: " .. (os.getComputerLabel() or "sem nome"))
     print("Sistema: " .. os.version())
     print("HTTP: " .. ((http and http.get) and "disponivel" or "desativado"))
-    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua", "/dev/bin/fuel.lua", "/dev/bin/station.lua", "/dev/bin/trash.lua", "/dev/bin/dashboard.lua" }) do
+    for _, path in ipairs({ "/install.lua", "/startup.lua", "/dev/dev.lua", "/dev/bin/inspect.lua", "/dev/bin/mine.lua", "/dev/bin/fuel.lua", "/dev/bin/station.lua", "/dev/bin/trash.lua", "/dev/bin/jobs.lua", "/dev/bin/agent.lua", "/dev/bin/dashboard.lua" }) do
         print(((fs.exists(path) and not fs.isDir(path)) and "[OK] " or "[AUSENTE] ") .. path)
     end
     print("Peripherals: " .. #peripheral.getNames())
@@ -55,6 +58,14 @@ elseif command == "fuel" then
 elseif command == "mine" then
     if not shell.execute("/dev/bin/mine.lua", table.unpack(args, 2)) then
         error("Mineracao interrompida. Leia a mensagem acima; use dev mine status.", 0)
+    end
+elseif command == "jobs" then
+    if not shell.execute("/dev/bin/jobs.lua", table.unpack(args, 2)) then
+        error("Falha no job manager.",0)
+    end
+elseif command == "agent" then
+    if not shell.execute("/dev/bin/agent.lua") then
+        error("Falha no agent da turtle.",0)
     end
 elseif command == "dashboard" then
     if not shell.execute("/dev/bin/dashboard.lua") then
