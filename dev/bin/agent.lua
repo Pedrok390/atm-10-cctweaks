@@ -177,7 +177,8 @@ local function executeJob(msg)
       return true
     end
     ok=shell.execute("/dev/bin/transport.lua",msg.source,msg.destination,
-      tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "transport"))
+      tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "transport"),
+      tostring(msg.item or ""),tostring(msg.quantity or ""))
   elseif kind=="mine" then
     local w,l,d,m=tonumber(msg.width),tonumber(msg.length),tonumber(msg.depth),tonumber(msg.minimum or 500)
     local sx,sy,sz=tonumber(msg.startX),tonumber(msg.startY),tonumber(msg.startZ)

@@ -228,17 +228,36 @@ local function inventoryEmpty()
   return true
 end
 
-local function pullCargo()
+local function cargoCount(filter)
+  local n=0
+  for i=1,16 do
+    local d=turtle.getItemDetail(i)
+    if d and (not filter or d.name==filter) then n=n+turtle.getItemCount(i) end
+  end
+  return n
+end
+
+local function pullCargo(filter,limit)
   local moved=0
   for i=1,16 do
+    if limit and moved>=limit then break end
     turtle.select(i)
-    while turtle.getItemCount(i)<64 do
+    local want=limit and math.max(0,limit-moved) or 64
+    if want>0 then
       local before=turtle.getItemCount(i)
-      if not turtle.suck() then break end
-      local after=turtle.getItemCount(i)
-      if after<=before then break end
-      moved=moved+(after-before)
-      if after>=64 then break end
+      local sucked=turtle.suck(math.min(64,want))
+      if sucked then
+        local detail=turtle.getItemDetail(i)
+        local after=turtle.getItemCount(i)
+        local gained=math.max(0,after-before)
+        if filter and (not detail or detail.name~=filter) then
+          if not turtle.drop() then
+            error("Item fora do filtro foi puxado e nao consegui devolve-lo a origem.",0)
+          end
+        else
+          moved=moved+gained
+        end
+      end
     end
   end
   turtle.select(1)
@@ -264,6 +283,9 @@ local function dropCargo()
 end
 
 local sourceName,destName,jobId,jobName=args[1],args[2],args[3],args[4]
+local itemFilter=args[5]~="" and args[5] or nil
+local quantity=args[6]~="" and tonumber(args[6]) or nil
+if quantity then quantity=math.floor(quantity) end
 if not sourceName or not destName then
   error("Uso interno: transport.lua <origem> <destino> <jobId> <jobName>",0)
 end
@@ -290,23 +312,54 @@ end
 local needed=minSource+minDest+MARGIN
 if fuel()<needed then error("Combustivel insuficiente para transport. Precisa de pelo menos "..needed..".",0) end
 
-report("INDO_ORIGEM",jobId,jobName,{source=sourceName,destination=destName})
-local ok,target=navigate(nav,sourceGoals,blocked)
-if not ok then error("Nao encontrei rota ate station origem: "..tostring(target),0) end
-nav.heading=turnTo(nav.heading,target.face)
+local delivered=0
+local trips=0
 
-local count=pullCargo()
-if count==0 then
-  report("SEM_CARGA",jobId,jobName,{source=sourceName,destination=destName})
-  print("Nenhum item disponivel na station origem.")
-  return
+while true do
+  local remaining=quantity and (quantity-delivered) or nil
+  if remaining and remaining<=0 then break end
+
+  report("INDO_ORIGEM",jobId,jobName,{
+    source=sourceName,destination=destName,item=itemFilter,
+    delivered=delivered,target=quantity,trips=trips,
+  })
+  local ok,target=navigate(nav,sourceGoals,blocked)
+  if not ok then error("Nao encontrei rota ate station origem: "..tostring(target),0) end
+  nav.heading=turnTo(nav.heading,target.face)
+
+  local count=pullCargo(itemFilter,remaining)
+  if count==0 then
+    local state=delivered>0 and "ORIGEM_ESGOTADA" or "SEM_CARGA"
+    report(state,jobId,jobName,{
+      source=sourceName,destination=destName,item=itemFilter,
+      delivered=delivered,target=quantity,trips=trips,
+    })
+    print("Origem sem mais itens"..(itemFilter and (" do filtro "..itemFilter) or "")..
+      ". Entregues: "..delivered..".")
+    return
+  end
+
+  report("INDO_DESTINO",jobId,jobName,{
+    items=count,source=sourceName,destination=destName,item=itemFilter,
+    delivered=delivered,target=quantity,trips=trips,
+  })
+  ok,target=navigate(nav,destGoals,blocked)
+  if not ok then error("Nao encontrei rota ate station destino: "..tostring(target),0) end
+  nav.heading=turnTo(nav.heading,target.face)
+  dropCargo()
+
+  delivered=delivered+count
+  trips=trips+1
+  report("VIAGEM_CONCLUIDA",jobId,jobName,{
+    items=count,source=sourceName,destination=destName,item=itemFilter,
+    delivered=delivered,target=quantity,trips=trips,
+  })
+
+  if not itemFilter and not quantity then break end
 end
 
-report("INDO_DESTINO",jobId,jobName,{items=count,source=sourceName,destination=destName})
-ok,target=navigate(nav,destGoals,blocked)
-if not ok then error("Nao encontrei rota ate station destino: "..tostring(target),0) end
-nav.heading=turnTo(nav.heading,target.face)
-dropCargo()
-
-report("CONCLUIDO",jobId,jobName,{items=count,source=sourceName,destination=destName})
-print("Transport concluido: "..count.." itens de "..sourceName.." para "..destName..".")
+report("CONCLUIDO",jobId,jobName,{
+  source=sourceName,destination=destName,item=itemFilter,
+  delivered=delivered,target=quantity,trips=trips,
+})
+print("Transport concluido: "..delivered.." itens em "..trips.." viagem(ns).")

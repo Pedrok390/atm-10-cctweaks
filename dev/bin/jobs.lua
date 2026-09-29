@@ -151,7 +151,7 @@ local function startJob(t,j)
     startX=j.start and j.start.x or nil,
     startY=j.start and j.start.y or nil,
     startZ=j.start and j.start.z or nil,
-    source=j.source,destination=j.destination,
+    source=j.source,destination=j.destination,item=j.item,quantity=j.quantity,
   }
   if not rednet.send(j.turtleId,msg,JOB_PROTOCOL) then error("Nao consegui enviar o job para a turtle.",0) end
   print("Job enviado. Aguardando a turtle realmente iniciar...")
@@ -209,20 +209,27 @@ local function createJob(t,kind,name,w,l,d,x,y,z,m)
   print("Job criado: #"..j.id.." "..j.name.." inicio="..x..","..y..","..z)
 end
 
-local function createTransport(t,name,source,destination)
+local function createTransport(t,name,source,destination,item,quantity)
   if not name or name=="" or name:find("%s") then error("Nome do job deve ser uma palavra.",0) end
   if findJob(t,name) then error("Ja existe job com esse nome.",0) end
   if not source or source=="" or not destination or destination=="" then
-    error("Uso: dev jobs create transport <nome> <origem> <destino>",0)
+    error("Uso: dev jobs create transport <nome> <origem> <destino> [item] [quantidade]",0)
   end
   if source==destination then error("Origem e destino precisam ser diferentes.",0) end
+  if item=="" then item=nil end
+  if quantity~=nil then
+    quantity=integer(quantity,1,1000000000)
+    if not quantity then error("Quantidade precisa ser um inteiro positivo.",0) end
+  end
   local j={
-    id=t.nextId,type="transport",name=name,source=source,destination=destination,state="CRIADO",
+    id=t.nextId,type="transport",name=name,source=source,destination=destination,
+    item=item,quantity=quantity,state="CRIADO",
   }
   t.nextId=t.nextId+1
   t.jobs[#t.jobs+1]=j
   saveJobs(t)
   print("Job transport criado: #"..j.id.." "..name.." "..source.." -> "..destination)
+  if item then print("Filtro: "..item..(quantity and (" quantidade="..quantity) or " ate esgotar")) end
 end
 
 local function menu(t)
@@ -252,7 +259,12 @@ local function menu(t)
         write("Nome: "); local name=read()
         write("Station origem: "); local source=read()
         write("Station destino: "); local destination=read()
-        local ok,err=pcall(createTransport,t,name,source,destination)
+        write("Item [vazio=todos]: "); local item=read(); if item=="" then item=nil end
+        local quantity=nil
+        if item then
+          write("Quantidade [vazio=ate esgotar]: "); quantity=read(); if quantity=="" then quantity=nil end
+        end
+        local ok,err=pcall(createTransport,t,name,source,destination,item,quantity)
         if not ok then printError(err); sleep(2) end
       else
         write("Nome: "); local name=read()
@@ -296,7 +308,7 @@ elseif cmd=="list" then listJobs(t)
 elseif cmd=="discover" then printTurtles(discover(args[2] or 3))
 elseif cmd=="create" then
   if args[2]=="transport" then
-    createTransport(t,args[3],args[4],args[5])
+    createTransport(t,args[3],args[4],args[5],args[6],args[7])
   else
     createJob(t,args[2],args[3],args[4],args[5],args[6],args[7],args[8],args[9],args[10])
   end
