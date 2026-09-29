@@ -254,6 +254,27 @@ local function createTransport(t,name,source,destination,item,quantity)
   if item then print("Filtro: "..item..(quantity and (" quantidade="..quantity) or " ate esgotar")) end
 end
 
+local function queueJob(t,j,priority)
+  priority=priority or "normal"
+  if priority~="high" and priority~="normal" and priority~="low" then
+    error("Prioridade: high, normal ou low.",0)
+  end
+  j.priority=priority
+  j.queuedAt=os.epoch and os.epoch("utc") or math.floor(os.clock()*1000)
+  j.state="FILA"
+  j.turtleId=nil
+  j.schedulerRequest=nil
+  saveJobs(t)
+  print("Job "..j.name.." entrou na fila ("..priority..").")
+end
+
+local function unqueueJob(t,j)
+  if j.state~="FILA" and j.state~="DESPACHANDO" then error("Job nao esta na fila.",0) end
+  j.state="CRIADO"; j.turtleId=nil; j.schedulerRequest=nil
+  saveJobs(t)
+  print("Job "..j.name.." removido da fila.")
+end
+
 local function menu(t)
   while true do
     term.clear(); term.setCursorPos(1,1)
@@ -334,6 +355,12 @@ elseif cmd=="create" then
   else
     createJob(t,args[2],args[3],args[4],args[5],args[6],args[7],args[8],args[9],args[10])
   end
+elseif cmd=="queue" then
+  local j=findJob(t,args[2]); if not j then error("Job nao encontrado.",0) end
+  queueJob(t,j,args[3])
+elseif cmd=="unqueue" then
+  local j=findJob(t,args[2]); if not j then error("Job nao encontrado.",0) end
+  unqueueJob(t,j)
 elseif cmd=="assign" then
   local j=findJob(t,args[2]); local id=tonumber(args[3])
   if not j or not id then error("Uso: dev jobs assign <job> <turtleId>",0) end
@@ -351,5 +378,5 @@ elseif cmd=="transport-control" then
 elseif cmd=="pause" or cmd=="resume" or cmd=="home" or cmd=="cancel" then
   sendMine(args[2],cmd)
 else
-  error("Uso: dev jobs [list|discover|create|assign|start|pause|resume|home|cancel]",0)
+  error("Uso: dev jobs [list|discover|create|queue|unqueue|assign|start|pause|resume|home|cancel]",0)
 end
