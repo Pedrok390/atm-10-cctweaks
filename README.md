@@ -355,3 +355,30 @@ No `dev fleet`, os mesmos atalhos agora controlam transport:
 
 O controle usa o protocolo `atm10:transport:command` e confirma o recebimento
 antes de o Pocket considerar o comando enviado.
+
+
+## Scheduler automatico de jobs
+
+Jobs podem entrar em uma fila compartilhada:
+
+```text
+dev jobs queue mina1
+dev jobs queue ferro high
+dev jobs queue mina2 normal
+dev jobs queue pedra low
+dev jobs unqueue mina2
+```
+
+Prioridades: `high`, `normal` e `low`. Dentro da mesma prioridade, o job
+mais antigo sai primeiro.
+
+Inicie o despachante no Advanced Wireless Pocket Computer ou em um computador
+wireless dedicado:
+
+```text
+dev scheduler
+```
+
+O scheduler descobre agents livres e atribui automaticamente os jobs da fila.
+O fluxo manual `assign/start` continua disponivel. O `dev fleet` mostra a
+quantidade de jobs em fila no cabecalho.
