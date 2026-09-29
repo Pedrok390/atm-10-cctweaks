@@ -168,17 +168,32 @@ local function executeJob(msg)
     announce("OCUPADA",{requestId=msg.requestId,error="tarefa existente"})
     return true
   end
-  local w,l,d,m=tonumber(msg.width),tonumber(msg.length),tonumber(msg.depth),tonumber(msg.minimum or 500)
-  local sx,sy,sz=tonumber(msg.startX),tonumber(msg.startY),tonumber(msg.startZ)
-  if not w or not l or not d or not m or sx==nil or sy==nil or sz==nil then
-    announce("ERRO",{requestId=msg.requestId,error="job mine invalido ou sem coordenada inicial"})
+  local kind=msg.jobType or "mine"
+  announce("INICIANDO",{requestId=msg.requestId,jobId=msg.jobId,jobName=msg.jobName,jobType=kind})
+  local ok
+  if kind=="transport" then
+    if type(msg.source)~="string" or type(msg.destination)~="string" then
+      announce("ERRO",{requestId=msg.requestId,error="job transport invalido"})
+      return true
+    end
+    ok=shell.execute("/dev/bin/transport.lua",msg.source,msg.destination,
+      tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "transport"))
+  elseif kind=="mine" then
+    local w,l,d,m=tonumber(msg.width),tonumber(msg.length),tonumber(msg.depth),tonumber(msg.minimum or 500)
+    local sx,sy,sz=tonumber(msg.startX),tonumber(msg.startY),tonumber(msg.startZ)
+    if not w or not l or not d or not m or sx==nil or sy==nil or sz==nil then
+      announce("ERRO",{requestId=msg.requestId,error="job mine invalido ou sem coordenada inicial"})
+      return true
+    end
+    ok=shell.execute("/dev/bin/mine.lua","job-start",tostring(w),tostring(l),tostring(d),tostring(m),
+      tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "job"),tostring(msg.requestId or ""),
+      tostring(sx),tostring(sy),tostring(sz))
+  else
+    announce("ERRO",{requestId=msg.requestId,error="tipo de job nao suportado: "..tostring(kind)})
     return true
   end
-  announce("INICIANDO",{requestId=msg.requestId,jobId=msg.jobId,jobName=msg.jobName})
-  local ok=shell.execute("/dev/bin/mine.lua","job-start",tostring(w),tostring(l),tostring(d),tostring(m),tostring(msg.jobId or ""),tostring(msg.jobName or msg.jobId or "job"),tostring(msg.requestId or ""),
-    tostring(sx),tostring(sy),tostring(sz))
   if ok then announce("LIVRE",{requestId=msg.requestId,lastJobId=msg.jobId})
-  else announce("ERRO",{requestId=msg.requestId,jobId=msg.jobId,error="mine.lua terminou com erro"}) end
+  else announce("ERRO",{requestId=msg.requestId,jobId=msg.jobId,error=kind.." terminou com erro"}) end
   return true
 end
 
