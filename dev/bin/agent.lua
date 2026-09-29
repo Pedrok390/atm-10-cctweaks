@@ -148,6 +148,21 @@ local function executeJob(msg)
     end
     return true
   end
+  if msg.command=="cancel" then
+    local state=latestMineState()
+    if not state or state.mode=="done" then
+      announce("LIVRE",{requestId=msg.requestId,message="nenhuma tarefa ativa"})
+      return true
+    end
+    announce("CANCELANDO",{requestId=msg.requestId,jobId=state.jobId,jobName=state.jobName})
+    local ok=shell.execute("/dev/bin/mine.lua","job-cancel")
+    if ok then
+      announce("LIVRE",{requestId=msg.requestId,lastJobId=state.jobId,message="tarefa cancelada"})
+    else
+      announce("ERRO",{requestId=msg.requestId,jobId=state.jobId,error="cancelamento seguro terminou com erro"})
+    end
+    return true
+  end
   if msg.command~="start" then return false end
   if hasActiveMine() then
     announce("OCUPADA",{requestId=msg.requestId,error="tarefa existente"})
