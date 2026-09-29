@@ -1266,6 +1266,23 @@ local function main()
         print("Mineracao cancelada. Agora voce pode iniciar uma nova tarefa.")
         return
     end
+    if args[1] == "job-cancel" then
+        if not s or s.mode == "done" then
+            deleteState()
+            print("Nenhuma mineracao ativa.")
+            return
+        end
+        if s.pending then error("Posicao incerta. Use dev mine recover-home antes de cancelar.", 0) end
+        validateMiningStations(true)
+        s.remotePaused = false
+        s.remoteHome = true
+        s.remoteCancel = true
+        s.returnReason = "CANCELAMENTO"
+        if s.mode ~= "dock" then s.mode = "home" end
+        save()
+        runControlled()
+        return
+    end
     if args[1] == "resume" then
         if not s then error("Nenhuma tarefa salva. Use dev mine.", 0) end
         if s.pending then error("Interrupcao durante movimento: posicao incerta. Use dev mine recover-home.", 0) end
